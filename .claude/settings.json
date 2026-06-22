@@ -1,0 +1,11 @@
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git stash drop:*)"
+    ]
+  }
+}
