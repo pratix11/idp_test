@@ -69,3 +69,10 @@ class DocumentRepository:
 
     def list_all(self) -> list[DocumentModel]:
         return list(self.session.scalars(select(DocumentModel)).all())
+
+    def list_searchable(self) -> list[DocumentModel]:
+        stmt = select(DocumentModel).where(
+            DocumentModel.state == DocumentState.COMPLETED.value,
+            DocumentModel.content.is_not(None),
+        )
+        return list(self.session.scalars(stmt).all())

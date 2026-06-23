@@ -87,7 +87,12 @@ class DocumentProcessor:
             return "failed"
 
         markdown_path = self._write_markdown(category, file_path.stem, parsed.markdown)
-        self.repository.update(document_id, pages=parsed.page_count, markdown_path=str(markdown_path))
+        self.repository.update(
+            document_id,
+            pages=parsed.page_count,
+            markdown_path=str(markdown_path),
+            content=parsed.text,
+        )
         self.repository.update_state(document_id, DocumentState.COMPLETED)
         return "completed"
 
