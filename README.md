@@ -5,8 +5,9 @@ Property & Regulatory Document Intelligence Platform — ingests, parses, and in
 ## Status
 
 **Phase 1: Document Intelligence Foundation — complete.**
+**Phase 2: Search Foundation — complete.**
 
-Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Phases 2+ (search, embeddings, RAG, agents) are not started.
+Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phases 3+ (embeddings, Qdrant, RAG, agents) are not started.
 
 ## Setup
 
@@ -26,7 +27,25 @@ Drop PDFs into `data/raw/<source>/<category>/...pdf` (categories: `acts`, `circu
 uv run python -m property_intel.pipeline
 ```
 
-This scans `data/raw`, parses each document (Docling, falling back to MarkItDown on failure), writes generated markdown to `data/processed/<category>/`, and records each document's lifecycle state (`uploaded` → `processing` → `completed`/`failed`) in PostgreSQL. Re-running skips documents already completed (detected by content hash).
+This scans `data/raw`, parses each document (Docling, falling back to MarkItDown on failure), writes generated markdown to `data/processed/<category>/`, and records each document's lifecycle state (`uploaded` → `processing` → `completed`/`failed`) in PostgreSQL, including its plain-text content for search indexing. Re-running skips documents already completed (detected by content hash).
+
+## Searching documents
+
+Once the batch pipeline has populated PostgreSQL, search it ad hoc:
+
+```bash
+uv run python -m property_intel.search "registration deadline" --mode fulltext --category circulars
+uv run python -m property_intel.search "registration deadline" --mode bm25
+uv run python -m property_intel.search --mode metadata --category acts --source maharera
+```
+
+Three interchangeable backends, all returning the same paginated `SearchResultPage` shape (`src/property_intel/search/schema.py`):
+
+* **`fulltext`** — PostgreSQL full-text search (`websearch_to_tsquery` against a generated, GIN-indexed `tsvector` column over title + content), ranked with `ts_rank`, with `ts_headline` snippets.
+* **`bm25`** — in-memory BM25 ranking (`rank_bm25`) over completed documents, useful as a keyword-ranking baseline independent of Postgres' ranking function.
+* **`metadata`** — pure filter/browse: title substring match plus exact category/source/document_type and date-range filters, no ranking.
+
+All three support `--category`, `--source`, `--document-type`, `--page`, and `--page-size`. `SearchService` (`src/property_intel/search/service.py`) is the single entrypoint dispatching to whichever backend `--mode` selects.
 
 ## Testing
 
