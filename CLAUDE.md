@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Property & Regulatory Document Intelligence Platform — ingests, parses, and indexes regulatory PDF documents (MahaRERA first; MHADA/CIDCO planned). Full spec and phase breakdown: `docs/PRD.md`. That file is the source of truth for scope — always check which phase is active before adding functionality from a later phase.
 
-**Status:** Phase 1 (Document Intelligence Foundation) is complete and merged to `main`. Phase 2+ (search, embeddings/Qdrant, RAG, agents) not started.
+**Status:** Phase 1 (Document Intelligence Foundation) and Phase 2 (Search Foundation — PostgreSQL FTS, BM25, metadata search, `SearchService` facade) are complete and merged to `main`. Phase 3+ (embeddings/Qdrant, hybrid search, RAG, agents) not started.
 
 ## Commands
 

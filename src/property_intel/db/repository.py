@@ -1,9 +1,10 @@
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from property_intel.db.models import DocumentModel
+from property_intel.db.models import ChunkModel, DocumentModel
 from property_intel.registry.state_machine import DocumentState, DuplicateDocumentError, validate_transition
+from property_intel.retrieval.models import DocumentChunk
 
 
 class DocumentNotFoundError(Exception):
@@ -76,3 +77,49 @@ class DocumentRepository:
             DocumentModel.content.is_not(None),
         )
         return list(self.session.scalars(stmt).all())
+
+
+class ChunkRepository:
+    def __init__(self, session: Session) -> None:
+        self._session = session
+
+    def bulk_create(self, chunks: list[DocumentChunk]) -> list[ChunkModel]:
+        models = [
+            ChunkModel(
+                document_id=c.document_id,
+                chunk_index=c.chunk_index,
+                content=c.content,
+                token_count=c.token_count,
+                section_title=c.section_title,
+            )
+            for c in chunks
+        ]
+        self._session.add_all(models)
+        self._session.commit()
+        for m in models:
+            self._session.refresh(m)
+        return models
+
+    def get_by_document_id(self, document_id: int) -> list[ChunkModel]:
+        stmt = (
+            select(ChunkModel)
+            .where(ChunkModel.document_id == document_id)
+            .order_by(ChunkModel.chunk_index)
+        )
+        return list(self._session.scalars(stmt).all())
+
+    def delete_by_document_id(self, document_id: int) -> None:
+        self._session.execute(
+            delete(ChunkModel).where(ChunkModel.document_id == document_id)
+        )
+        self._session.commit()
+
+    def count_by_document_id(self, document_id: int) -> int:
+        stmt = select(func.count()).select_from(ChunkModel).where(
+            ChunkModel.document_id == document_id
+        )
+        return self._session.scalar(stmt) or 0
+
+    def list_all(self) -> list[ChunkModel]:
+        stmt = select(ChunkModel).order_by(ChunkModel.document_id, ChunkModel.chunk_index)
+        return list(self._session.scalars(stmt).all())
