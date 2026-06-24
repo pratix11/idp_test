@@ -119,3 +119,7 @@ class ChunkRepository:
             ChunkModel.document_id == document_id
         )
         return self._session.scalar(stmt) or 0
+
+    def list_all(self) -> list[ChunkModel]:
+        stmt = select(ChunkModel).order_by(ChunkModel.document_id, ChunkModel.chunk_index)
+        return list(self._session.scalars(stmt).all())
