@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "document_chunks"
+    reranker_model: str = "BAAI/bge-reranker-v2-m3"
 
     @staticmethod
     def _resolve(path: Path) -> Path:
