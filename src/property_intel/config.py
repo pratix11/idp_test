@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     log_dir: Path = REPO_ROOT / "logs"
     embedding_model: str = "BAAI/bge-m3"
     embedding_batch_size: int = 32
+    qdrant_host: str = "localhost"
+    qdrant_port: int = 6333
+    qdrant_collection: str = "document_chunks"
 
     @staticmethod
     def _resolve(path: Path) -> Path:
