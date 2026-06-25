@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from property_intel.copilot.__main__ import cmd_ask, cmd_compare, cmd_summarize
+from property_intel.copilot.__main__ import _print_citations, cmd_ask, cmd_compare, cmd_summarize, main
 from property_intel.copilot.context_builder import Citation
 from property_intel.copilot.service import CopilotAnswer
 
@@ -87,3 +88,42 @@ def test_cmd_compare_stream_prints_chunks(capsys: pytest.CaptureFixture[str]) ->
         cmd_compare(args)  # type: ignore[arg-type]
     captured = capsys.readouterr()
     assert "Diff" in captured.out
+
+
+# ── _print_citations ──────────────────────────────────────────────────────────
+
+def test_print_citations_empty_list_prints_nothing(capsys: pytest.CaptureFixture[str]) -> None:
+    _print_citations([])
+    assert capsys.readouterr().out == ""
+
+
+def test_print_citations_prints_index_and_section(capsys: pytest.CaptureFixture[str]) -> None:
+    c = Citation(index=2, chunk_id=5, document_id=99, section_title="Fees", content_snippet="fee text here")
+    _print_citations([c])
+    out = capsys.readouterr().out
+    assert "[2]" in out
+    assert "doc_id=99" in out
+    assert "Fees" in out
+
+
+# ── main() ────────────────────────────────────────────────────────────────────
+
+def test_main_ask_dispatches_to_cmd_ask(capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("sys.argv", ["copilot", "ask", "--no-stream", "What is Section 4?"]):
+        with patch("property_intel.copilot.__main__._get_service", return_value=_mock_service()):
+            main()
+    assert "The answer." in capsys.readouterr().out
+
+
+def test_main_summarize_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("sys.argv", ["copilot", "summarize", "--no-stream", "builder rules"]):
+        with patch("property_intel.copilot.__main__._get_service", return_value=_mock_service()):
+            main()
+    assert "The answer." in capsys.readouterr().out
+
+
+def test_main_compare_dispatches(capsys: pytest.CaptureFixture[str]) -> None:
+    with patch("sys.argv", ["copilot", "compare", "--no-stream", "2020 rules", "2023 rules"]):
+        with patch("property_intel.copilot.__main__._get_service", return_value=_mock_service()):
+            main()
+    assert "The answer." in capsys.readouterr().out
