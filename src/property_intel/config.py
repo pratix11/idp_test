@@ -27,6 +27,10 @@ class Settings(BaseSettings):
     qdrant_port: int = 6333
     qdrant_collection: str = "document_chunks"
     reranker_model: str = "BAAI/bge-reranker-v2-m3"
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+    openai_temperature: float = 0.0
+    openai_max_tokens: int = 1024
 
     @staticmethod
     def _resolve(path: Path) -> Path:
