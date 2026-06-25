@@ -1,3 +1,5 @@
+from collections.abc import Generator
+
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -21,3 +23,13 @@ def init_db(engine: Engine) -> None:
 
 def drop_db(engine: Engine) -> None:
     Base.metadata.drop_all(engine)
+
+
+def get_session() -> Generator[Session, None, None]:
+    """FastAPI dependency that yields a database session per request."""
+    factory = get_session_factory()
+    session = factory()
+    try:
+        yield session
+    finally:
+        session.close()

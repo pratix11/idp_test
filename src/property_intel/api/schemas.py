@@ -1,0 +1,35 @@
+"""Request / response schemas for the FastAPI copilot endpoints."""
+
+from __future__ import annotations
+
+from pydantic import BaseModel, Field
+
+
+class AskRequest(BaseModel):
+    question: str = Field(..., min_length=1, description="The question to answer.")
+
+
+class SummarizeRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="Topic or keywords to summarise.")
+
+
+class CompareRequest(BaseModel):
+    query_a: str = Field(..., min_length=1, description="First topic or document set.")
+    query_b: str = Field(..., min_length=1, description="Second topic or document set.")
+
+
+class CitationOut(BaseModel):
+    index: int
+    chunk_id: int
+    document_id: int
+    section_title: str | None
+    content_snippet: str
+
+
+class CopilotResponse(BaseModel):
+    answer: str
+    citations: list[CitationOut]
+
+
+class HealthResponse(BaseModel):
+    status: str = "ok"
