@@ -44,3 +44,18 @@ All concrete parsers and the router share one exception family (`ParserError`, `
 
 - Never add a `Co-Authored-By: Claude` trailer to commits or a "Generated with Claude Code" line to PR descriptions — this is enforced by `attribution: { commit: "", pr: "" }` in `.claude/settings.json`, not just this instruction.
 - Commit per task/feature with a clear message, not one giant commit.
+
+## Session rules — enforce these every session, no exceptions
+
+These are standing rules. Never ask for confirmation on them.
+
+1. **Git/GitHub — just do it.** Run all git commands (commit, push, branch, PR create/merge) and all `gh` commands without asking for approval first. No "should I commit?", no "ready to push?", no "shall I open the PR?". Just run it.
+
+2. **Tests and type checks — always run after every task.** After any code change, run `uv run pytest` and `uv run mypy src` immediately without prompting. Report results. Coverage must stay ≥ 80%.
+
+3. **Proceed task-to-task automatically.** After a task is committed and tests pass, move straight into the next task. Do not ask "ready for the next one?" or "shall I proceed?". Only stop if there is a genuine architectural decision the user needs to make (not routine sequencing).
+
+4. **Layman explanations — mandatory format every task.**
+   - **Before writing any code:** give a plain-English explanation of what we're about to build and the core idea behind the technology. Assume zero prior knowledge. Example: "What is RAG?", "What is a cross-encoder?", "What is SSE?".
+   - **After the task is committed:** give a "what we built and why" breakdown — what each class/method does, why that design decision was made, why the tests are structured that way. Plain English, no jargon without definition.
+   - Goal: user should be able to answer "explain X to me" in an AI engineering interview after reading these explanations.
