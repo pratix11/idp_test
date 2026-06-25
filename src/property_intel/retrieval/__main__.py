@@ -32,7 +32,7 @@ def main() -> None:
 
     if args.command == "index":
         counts = svc.index_documents(reindex=args.reindex)
-        print(f"Indexed {counts['documents']} documents → {counts['chunks']} chunks")
+        print(f"Indexed {counts['documents']} documents -> {counts['chunks']} chunks")
 
     elif args.command == "search":
         results = svc.search(
