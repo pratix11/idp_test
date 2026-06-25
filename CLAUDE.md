@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Property & Regulatory Document Intelligence Platform — ingests, parses, and indexes regulatory PDF documents (MahaRERA first; MHADA/CIDCO planned). Full spec and phase breakdown: `docs/PRD.md`. That file is the source of truth for scope — always check which phase is active before adding functionality from a later phase.
 
-**Status:** Phase 1 (Document Intelligence Foundation) and Phase 2 (Search Foundation — PostgreSQL FTS, BM25, metadata search, `SearchService` facade) are complete and merged to `main`. Phase 3+ (embeddings/Qdrant, hybrid search, RAG, agents) not started.
+**Status:** Phases 1–4 complete and merged to `main`. Phase 4 (AI Copilot) adds OpenAI RAG, `CopilotService` facade, FastAPI REST API with SSE streaming, and a copilot CLI. Phase 5+ (LangGraph agentic workflows) not started.
 
 ## Commands
 
@@ -34,7 +34,7 @@ All concrete parsers and the router share one exception family (`ParserError`, `
 
 ## Development rules (from the PRD)
 
-1. Build phase by phase — don't add Phase 2+ functionality (embeddings, Qdrant, LangGraph, RAG, agents) while Phase 1/2/etc. is still active.
+1. Build phase by phase — don't add Phase 5+ functionality (LangGraph agents) while Phase 4 is still active.
 2. Every feature needs tests before merge; keep coverage >=80%.
 3. Typed Python throughout — `mypy src` must stay clean.
 4. One PR per phase (or major task), not direct pushes to `main`, except for small config-only changes (e.g. `.claude/settings.json`) where pushing straight to `main` is fine.
