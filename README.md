@@ -10,8 +10,9 @@ Property & Regulatory Document Intelligence Platform — ingests, parses, indexe
 **Phase 4: AI Copilot — complete.**
 **Phase 5: Agentic Layer — complete.**
 **Phase 6: Evaluation — complete.**
+**Phase 7: Enterprise Features — complete.**
 
-Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6 adds RAGAS + DeepEval metrics, LangSmith + OpenAI tracing, and an EvaluationPipeline orchestrator. Phase 7 (enterprise features) not started.
+Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6 adds RAGAS + DeepEval metrics, LangSmith + OpenAI tracing, and an EvaluationPipeline orchestrator. Phase 7 adds RBAC, audit logs, alerting, Drive sync, and document versioning.
 
 ## Setup
 
@@ -194,6 +195,88 @@ with oai_tracer.span("agent_run"):
 ```
 
 Both tracers are no-ops when the relevant env vars (`LANGCHAIN_API_KEY` / `OPENAI_API_KEY`) are absent — safe in CI.
+
+## Enterprise Features (Phase 7)
+
+Phase 7 adds compliance and operational control features required for production deployment.
+
+### Role-Based Access Control (RBAC)
+
+```python
+from property_intel.enterprise import AccessControl, User, BUILTIN_ROLES
+
+ac = AccessControl()
+user = User("alice", roles=[BUILTIN_ROLES["analyst"]])
+ac.can(user, "execute", "agents")   # True
+ac.can(user, "delete", "documents") # False
+ac.require(user, "delete", "documents")  # raises PermissionDeniedError
+```
+
+Built-in roles: `admin` (`*:*`), `analyst` (read + execute agents/copilot/evaluation), `viewer` (read-only), `auditor` (read documents + audit).
+
+### Audit Logs
+
+```python
+from property_intel.enterprise import AuditLogger, AuditLog
+
+logger = AuditLogger(path="audit.jsonl")   # optional JSONL persistence
+logger.log_action("alice", "execute", "agents", result="success", query="registration rules")
+
+log = AuditLog.from_logger(logger)
+log.by_user("alice")          # all events for alice
+log.denied()                  # all denied-access events
+log.since(cutoff_datetime)    # events after a timestamp
+log.summary()                 # {"execute": 1, ...}
+```
+
+### Alerts
+
+```python
+from property_intel.enterprise import AlertEngine, AlertNotifier
+from property_intel.enterprise.alerts import make_denied_access_rule, make_destructive_action_rule
+
+notifier = AlertNotifier()
+engine = AlertEngine(notifier=notifier)
+engine.add_rule(make_denied_access_rule())
+engine.add_rule(make_destructive_action_rule(resources=["users"]))
+
+for event in logger.events:
+    engine.evaluate(event)   # fires notifier on match
+
+print(notifier.alerts)  # list of Alert objects
+```
+
+### Drive Sync
+
+```python
+from property_intel.enterprise import DriveSyncConfig, DriveSyncService
+
+config = DriveSyncConfig(source_id="my-google-drive-folder-id")
+service = DriveSyncService(config, lister=my_google_drive_lister)
+
+result = service.sync()
+for f in result.new_files:
+    ingest(f)              # your ingestion pipeline
+    service.mark_synced(f)
+```
+
+`DriveSyncService` is I/O-free: the `lister` callable is injected, so any cloud storage backend can be wired in.
+
+### Document Versioning
+
+```python
+from property_intel.enterprise import VersionManager
+
+manager = VersionManager()
+v1 = manager.add_version("doc-1", content_hash="sha256:abc", author="alice", changelog="Initial upload")
+v2 = manager.add_version("doc-1", content_hash="sha256:def", author="bob", changelog="Updated section 3")
+
+manager.latest("doc-1")        # → v2
+manager.at("doc-1", 1)         # → v1
+manager.history("doc-1")       # → [v1, v2]
+diff = manager.diff("doc-1", 1, 2)
+# diff.hash_changed, diff.author_changed, diff.time_delta_seconds, diff.changelogs
+```
 
 ## Legacy keyword search (Phase 2)
 
