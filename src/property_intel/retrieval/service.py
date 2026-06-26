@@ -149,4 +149,7 @@ class RetrievalService:
                 query, candidates, top_k=rerank_top_k or limit
             )
 
-        return candidates[:limit]
+        results = candidates[:limit]
+        doc_ids = list({c.document_id for c in results})
+        titles = DocumentRepository(self._session).get_titles_by_ids(doc_ids)
+        return [c.model_copy(update={"document_title": titles.get(c.document_id)}) for c in results]

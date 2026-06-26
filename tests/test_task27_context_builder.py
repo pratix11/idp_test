@@ -109,3 +109,29 @@ def test_build_token_count_matches_included_chunks() -> None:
         result = ContextBuilder(max_context_tokens=200).build(chunks)
 
     assert result.token_count == 100  # 2 chunks × 50 tokens each
+
+
+# ── document title in context ──────────────────────────────────────────────────
+
+def test_build_includes_document_title_in_header() -> None:
+    chunk = ScoredChunk(
+        chunk_id=1,
+        document_id=10,
+        chunk_index=0,
+        content="Builder must register.",
+        section_title="Registration",
+        score=0.9,
+        document_title="Real_Estate_Act_2016",
+    )
+    result = ContextBuilder().build([chunk])
+    assert "Document: Real_Estate_Act_2016" in result.context
+    assert "Section: Registration" in result.context
+    assert result.citations[0].document_title == "Real_Estate_Act_2016"
+
+
+def test_build_no_document_title_uses_section_only_format() -> None:
+    chunk = _chunk(section_title="Fees")
+    result = ContextBuilder().build([chunk])
+    assert "[1] Section: Fees" in result.context
+    assert "Document:" not in result.context
+    assert result.citations[0].document_title is None

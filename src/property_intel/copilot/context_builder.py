@@ -26,6 +26,7 @@ class Citation:
     document_id: int
     section_title: str | None
     content_snippet: str  # first 200 chars for display
+    document_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,11 @@ class ContextBuilder:
 
         for idx, chunk in enumerate(chunks, start=1):
             section = chunk.section_title or "—"
-            block = f"[{idx}] Section: {section}\n{chunk.content}"
+            if chunk.document_title:
+                header = f"[{idx}] Document: {chunk.document_title} | Section: {section}"
+            else:
+                header = f"[{idx}] Section: {section}"
+            block = f"{header}\n{chunk.content}"
             block_tokens = _count_tokens(block, self._encoding_name)
 
             if total_tokens + block_tokens > self.max_context_tokens:
@@ -83,6 +88,7 @@ class ContextBuilder:
                     index=idx,
                     chunk_id=chunk.chunk_id,
                     document_id=chunk.document_id,
+                    document_title=chunk.document_title,
                     section_title=chunk.section_title,
                     content_snippet=chunk.content[:200],
                 )

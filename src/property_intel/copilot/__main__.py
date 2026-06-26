@@ -28,8 +28,9 @@ def _print_citations(citations: list[object]) -> None:
     for c in citations:
         from property_intel.copilot.context_builder import Citation
         assert isinstance(c, Citation)
-        title = c.section_title or "—"
-        print(f"  [{c.index}] doc_id={c.document_id}  section={title}")
+        doc_label = c.document_title or f"doc_id={c.document_id}"
+        section = c.section_title or "—"
+        print(f"  [{c.index}] {doc_label}  |  section: {section}")
         print(f"       {c.content_snippet[:100]}...")
 
 

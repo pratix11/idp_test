@@ -22,6 +22,7 @@ class CitationOut(BaseModel):
     index: int
     chunk_id: int
     document_id: int
+    document_title: str | None = None
     section_title: str | None
     content_snippet: str
 

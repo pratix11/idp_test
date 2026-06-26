@@ -84,6 +84,14 @@ class DocumentRepository:
         )
         return list(self.session.scalars(stmt).all())
 
+    def get_titles_by_ids(self, document_ids: list[int]) -> dict[int, str]:
+        if not document_ids:
+            return {}
+        stmt = select(DocumentModel.id, DocumentModel.title).where(
+            DocumentModel.id.in_(document_ids)
+        )
+        return {row[0]: row[1] for row in self.session.execute(stmt)}
+
 
 class ChunkRepository:
     def __init__(self, session: Session) -> None:

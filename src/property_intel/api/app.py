@@ -54,6 +54,7 @@ def _to_response(result: object) -> CopilotResponse:
                 index=c.index,
                 chunk_id=c.chunk_id,
                 document_id=c.document_id,
+                document_title=c.document_title,
                 section_title=c.section_title,
                 content_snippet=c.content_snippet,
             )

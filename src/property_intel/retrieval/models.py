@@ -26,3 +26,4 @@ class ScoredChunk(BaseModel):
     content: str
     section_title: str | None
     score: float
+    document_title: str | None = None
