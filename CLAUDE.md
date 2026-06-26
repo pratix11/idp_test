@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Property & Regulatory Document Intelligence Platform — ingests, parses, and indexes regulatory PDF documents (MahaRERA first; MHADA/CIDCO planned). Full spec and phase breakdown: `docs/PRD.md`. That file is the source of truth for scope — always check which phase is active before adding functionality from a later phase.
 
-**Status:** Phases 1–6 complete. Phase 4 (AI Copilot) adds OpenAI RAG, `CopilotService` facade, FastAPI REST API with SSE streaming, and a copilot CLI. Phase 5 (Agentic Layer) adds five LangGraph agents (DocumentAnalystAgent, ComparisonAgent, ComplianceAgent, ResearchAgent, ReportAgent) with a keyword-based AgentRouter. Phase 6 (Evaluation) adds RagasEvaluator, DeepEvaluator, LangSmithTracer, OpenAITracer, and EvaluationPipeline. Phase 7 (enterprise) not started.
+**Status:** Phases 1–7 complete. Phase 4 (AI Copilot) adds OpenAI RAG, `CopilotService` facade, FastAPI REST API with SSE streaming, and a copilot CLI. Phase 5 (Agentic Layer) adds five LangGraph agents (DocumentAnalystAgent, ComparisonAgent, ComplianceAgent, ResearchAgent, ReportAgent) with a keyword-based AgentRouter. Phase 6 (Evaluation) adds RagasEvaluator, DeepEvaluator, LangSmithTracer, OpenAITracer, and EvaluationPipeline. Phase 7 (Enterprise) adds RBAC (AccessControl, Permission, Role, User), Audit Logs (AuditEvent, AuditLogger, AuditLog), Alerts (AlertRule, AlertEngine, AlertNotifier), Drive Sync (DriveSyncService), and Document Versioning (VersionManager, DocumentVersion, VersionDiff).
 
 ## Commands
 
