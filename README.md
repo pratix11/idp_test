@@ -9,8 +9,9 @@ Property & Regulatory Document Intelligence Platform — ingests, parses, indexe
 **Phase 3: Enterprise Retrieval Layer — complete.**
 **Phase 4: AI Copilot — complete.**
 **Phase 5: Agentic Layer — complete.**
+**Phase 6: Evaluation — complete.**
 
-Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6+ (evaluation, enterprise features) not started.
+Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6 adds RAGAS + DeepEval metrics, LangSmith + OpenAI tracing, and an EvaluationPipeline orchestrator. Phase 7 (enterprise features) not started.
 
 ## Setup
 
@@ -138,6 +139,61 @@ result = router.route("Compare the 2016 and 2019 MahaRERA regulations.")
 ```
 
 All agents accept a `from_retrieval(retrieval, llm)` factory that wires the existing `RetrievalService` — no duplicate retrieval code.
+
+## Evaluation (Phase 6)
+
+Phase 6 adds measurement tools to quantify the quality of the RAG pipeline and agents.
+
+### Components
+
+| Component | Class | What it measures |
+|---|---|---|
+| RAGAS | `RagasEvaluator` | Faithfulness, Answer Relevancy, Context Precision (0–1) |
+| DeepEval | `DeepEvaluator` | Correctness, Answer Relevancy via LLM-as-judge G-Eval |
+| LangSmith | `LangSmithTracer` | Traces every LLM call: inputs, outputs, latency, tokens |
+| OpenAI Traces | `OpenAITracer` | Spans sent to OpenAI's platform tracing dashboard |
+
+### Usage
+
+```python
+from property_intel.evaluation import EvalDataset, EvalSample, EvaluationPipeline
+from property_intel.evaluation.ragas_eval import RagasEvaluator
+from property_intel.evaluation.deepeval_eval import DeepEvaluator
+
+# Build a dataset of question/answer/context triples
+dataset = EvalDataset.from_list([
+    {"question": "What is the registration fee?", "answer": "Rs. 10,000.",
+     "contexts": ["Fee is Rs. 10,000 per Section 4."], "ground_truth": "Rs. 10,000"},
+])
+
+# Run all evaluators
+pipeline = EvaluationPipeline({
+    "ragas": RagasEvaluator(llm=chat_openai, embeddings=openai_embeddings),
+    "deepeval": DeepEvaluator(model="gpt-4o-mini"),
+})
+report = pipeline.run(dataset)
+print(report.summary())
+report.to_json("eval_report.json")
+```
+
+The `EvaluationReport` scores are 0–1 (higher = better) and can be exported to JSON for tracking improvement over time.
+
+### Tracing
+
+```python
+from property_intel.evaluation.tracer import LangSmithTracer, OpenAITracer
+
+# LangSmith: records full traces in LangSmith dashboard
+tracer = LangSmithTracer(project_name="property-intel-eval")
+traced_ask = tracer.trace(copilot_service.ask, name="copilot_ask")
+
+# OpenAI: records spans in OpenAI's platform
+oai_tracer = OpenAITracer()
+with oai_tracer.span("agent_run"):
+    result = agent.run("What are the builder registration rules?")
+```
+
+Both tracers are no-ops when the relevant env vars (`LANGCHAIN_API_KEY` / `OPENAI_API_KEY`) are absent — safe in CI.
 
 ## Legacy keyword search (Phase 2)
 
