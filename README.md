@@ -8,8 +8,9 @@ Property & Regulatory Document Intelligence Platform — ingests, parses, indexe
 **Phase 2: Search Foundation — complete.**
 **Phase 3: Enterprise Retrieval Layer — complete.**
 **Phase 4: AI Copilot — complete.**
+**Phase 5: Agentic Layer — complete.**
 
-Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phases 5+ (agentic workflows) are not started.
+Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6+ (evaluation, enterprise features) not started.
 
 ## Setup
 
@@ -96,6 +97,47 @@ Endpoints:
 * `GET /health` — liveness check
 
 `CopilotService` (`src/property_intel/copilot/service.py`) is the single entry point that wires Phase 3 retrieval with OpenAI generation.
+
+## Agentic Workflows (Phase 5)
+
+Phase 5 moves beyond the single-pass copilot into **multi-step agentic workflows** built with [LangGraph](https://github.com/langchain-ai/langgraph). Each agent runs a ReAct loop — the LLM reasons about what to do, calls a retrieval tool, observes the result, and continues until it has enough information to produce a final answer.
+
+### Agents
+
+| Agent | Class | Capability |
+|---|---|---|
+| Document Analyst | `DocumentAnalystAgent` | Summarise a topic, extract structured facts (rules, deadlines, amounts) |
+| Comparison | `ComparisonAgent` | Compare two regulatory subjects, detect material changes |
+| Compliance | `ComplianceAgent` | Validate a situation: COMPLIANT / NON-COMPLIANT / NEEDS REVIEW |
+| Research | `ResearchAgent` | Multi-document research brief across the corpus |
+| Report | `ReportAgent` | Generate a professional 6-section regulatory report |
+
+### Tools available to agents
+
+* `retrieve_documents(query, limit)` — hybrid vector + BM25 search over indexed chunks
+* `summarize_topic(topic)` — retrieves and condenses context for a broad topic
+* `extract_entities(query)` — retrieves passages for fact extraction (rules, amounts, dates)
+
+### Router
+
+`AgentRouter` classifies the user's task by keyword matching and dispatches to the correct agent:
+
+```python
+from property_intel.agents import AgentRouter
+from property_intel.agents.document_analyst import DocumentAnalystAgent
+from property_intel.agents.comparison import ComparisonAgent
+# ... wire up retrieval and llm ...
+
+router = AgentRouter({
+    "document_analyst": DocumentAnalystAgent.from_retrieval(retrieval, llm),
+    "comparison": ComparisonAgent.from_retrieval(retrieval, llm),
+    # ... other agents
+})
+
+result = router.route("Compare the 2016 and 2019 MahaRERA regulations.")
+```
+
+All agents accept a `from_retrieval(retrieval, llm)` factory that wires the existing `RetrievalService` — no duplicate retrieval code.
 
 ## Legacy keyword search (Phase 2)
 
