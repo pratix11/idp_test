@@ -2,5 +2,10 @@
 
 from property_intel.enterprise.rbac import AccessControl, Permission, Role, User
 from property_intel.enterprise.audit import AuditEvent, AuditLogger
+from property_intel.enterprise.alerts import Alert, AlertEngine, AlertNotifier, AlertRule
 
-__all__ = ["AccessControl", "Permission", "Role", "User", "AuditEvent", "AuditLogger"]
+__all__ = [
+    "AccessControl", "Permission", "Role", "User",
+    "AuditEvent", "AuditLogger",
+    "Alert", "AlertEngine", "AlertNotifier", "AlertRule",
+]
