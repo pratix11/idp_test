@@ -30,6 +30,7 @@ class Repository(Protocol):
         self, document_id: int, target: DocumentState, error_message: str | None = None
     ) -> DocumentRecord: ...
     def list_all(self) -> Sequence[DocumentRecord]: ...
+    def rollback(self) -> None: ...
 
 
 @dataclass
@@ -60,6 +61,13 @@ class DocumentProcessor:
         if existing is not None and existing.state == DocumentState.COMPLETED.value:
             logger.info("Skipping already-completed document: %s", scanned.file_path)
             return "skipped"
+
+        if existing is not None and existing.state == DocumentState.PROCESSING.value:
+            # Document was interrupted mid-parse in a prior session — reset so it can retry.
+            logger.warning("Resetting stuck 'processing' document: %s", scanned.file_path)
+            self.repository.update_state(
+                existing.id, DocumentState.FAILED, error_message="interrupted, retrying"
+            )
 
         if existing is None:
             document = self.repository.create(
@@ -112,6 +120,7 @@ class BatchProcessor:
                 logger.exception("Unexpected error processing %s", scanned.file_path)
                 summary.failed += 1
                 summary.errors.append((scanned.file_path, str(exc)))
+                self.processor.repository.rollback()
                 continue
 
             if status == "completed":

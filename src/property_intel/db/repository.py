@@ -1,4 +1,4 @@
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update as sql_update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -43,12 +43,18 @@ class DocumentRepository:
         return self.session.scalars(stmt).first()
 
     def update(self, document_id: int, **fields: object) -> DocumentModel:
-        document = self.get_by_id(document_id)
-        for key, value in fields.items():
-            setattr(document, key, value)
+        # Direct SQL UPDATE avoids SQLAlchemy identity-map staleness that can occur
+        # after long-running operations (Docling parsing) expire session objects.
+        stmt = sql_update(DocumentModel).where(DocumentModel.id == document_id).values(**fields)
+        self.session.execute(stmt)
         self.session.commit()
-        self.session.refresh(document)
+        document = self.session.get(DocumentModel, document_id)
+        if document is None:
+            raise DocumentNotFoundError(f"No document with id={document_id}")
         return document
+
+    def rollback(self) -> None:
+        self.session.rollback()
 
     def update_state(
         self, document_id: int, target: DocumentState, error_message: str | None = None

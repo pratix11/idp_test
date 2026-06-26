@@ -167,8 +167,16 @@ def test_report_merge_later_score_wins_on_conflict() -> None:
 
 
 def test_evaluator_protocol_satisfied_by_mock() -> None:
-    ev = _mock_evaluator({"m": 0.5})
-    assert isinstance(ev, Evaluator)
+    # MagicMock uses __getattr__ which Python's isinstance Protocol check skips;
+    # test the duck-type contract with a concrete stub instead.
+    class _Stub:
+        def evaluate(self, dataset: object, **kwargs: object) -> dict[str, float]:
+            return {"m": 0.5}
+
+        def available_metrics(self) -> list[str]:
+            return ["m"]
+
+    assert isinstance(_Stub(), Evaluator)
 
 
 def test_evaluator_protocol_satisfied_by_ragas_evaluator() -> None:
