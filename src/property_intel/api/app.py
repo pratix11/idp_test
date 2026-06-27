@@ -19,8 +19,6 @@ from __future__ import annotations
 import json
 import traceback
 from collections.abc import AsyncGenerator
-from functools import lru_cache
-
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -39,9 +37,6 @@ from property_intel.api.schemas import (
 from property_intel.config import get_settings
 from property_intel.copilot.service import CopilotService
 from property_intel.db.session import get_session
-from property_intel.retrieval.embeddings import EmbeddingService
-from property_intel.retrieval.reranker import Reranker
-from property_intel.retrieval.vector_store import QdrantStore
 from property_intel.search.schema import SearchQuery
 from property_intel.search.service import SearchService
 
@@ -67,44 +62,14 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
     )
 
 
-# ── singleton heavy services (loaded once at startup, not per request) ─────────
-
-@lru_cache(maxsize=1)
-def _shared_embedder() -> EmbeddingService:
-    settings = get_settings()
-    return EmbeddingService(
-        model_name=settings.embedding_model,
-        batch_size=settings.embedding_batch_size,
-    )
-
-
-@lru_cache(maxsize=1)
-def _shared_reranker() -> Reranker:
-    settings = get_settings()
-    return Reranker(model_name=settings.reranker_model)
-
-
-@lru_cache(maxsize=1)
-def _shared_qdrant() -> QdrantStore:
-    settings = get_settings()
-    return QdrantStore(host=settings.qdrant_host, port=settings.qdrant_port)
-
-
 # ── FastAPI dependencies ───────────────────────────────────────────────────────
 
 def _get_copilot(session: Session = Depends(get_session)) -> CopilotService:
     from property_intel.copilot.context_builder import ContextBuilder
     from property_intel.copilot.llm_client import LLMClient
-    from property_intel.retrieval.chunking import MarkdownChunker
     from property_intel.retrieval.service import RetrievalService
 
-    retrieval = RetrievalService(
-        session=session,
-        chunker=MarkdownChunker(),
-        embedder=_shared_embedder(),
-        vector_store=_shared_qdrant(),
-        reranker=_shared_reranker(),
-    )
+    retrieval = RetrievalService.from_settings(session)
     return CopilotService(
         retrieval=retrieval,
         llm=LLMClient.from_settings(),

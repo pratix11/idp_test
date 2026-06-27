@@ -6,7 +6,7 @@ v1.0
 
 ## Status
 
-Planning → Phase 1 Execution
+Phases 1–7 Complete. Phase 8 active.
 
 ## Goal
 
@@ -428,10 +428,10 @@ Semantic retrieval.
 
 ### Components
 
-* BGE-M3 Embeddings
+* OpenAI text-embedding-3-small
 * Qdrant
 * Hybrid Search
-* Re-ranking
+* Cohere Rerank v3.5
 
 ### Deliverables
 
@@ -552,6 +552,68 @@ Report Agent
 
 ---
 
+# Phase 8: Production Deployment
+
+## Objective
+
+Deploy the full platform to Oracle Cloud Free Tier and expose a production-grade UI.
+
+## Components
+
+* Oracle Cloud VM (2 OCPUs / 12GB RAM)
+* Docker Compose (Postgres, Qdrant, FastAPI)
+* Lovable frontend (Next.js / React)
+* Nginx reverse proxy + SSL
+
+### Unit Tests
+
+* Health check endpoint reachable
+* Frontend build succeeds
+* Smoke test: ask endpoint returns a valid response
+
+---
+
+# Phase 9: Multi-Source Ingestion
+
+## Objective
+
+Extend ingestion beyond MahaRERA to MHADA, CIDCO, and Maharashtra Government Circulars.
+
+## Components
+
+* Source-specific scrapers / connectors
+* Metadata tagging by source and category
+* Incremental re-index on new documents
+
+### Unit Tests
+
+* Scraper contract tests
+* Dedup across sources
+* Category tagging accuracy
+
+---
+
+# Phase 10: Advanced Analytics
+
+## Objective
+
+Add cross-document trend analysis, compliance gap detection, and scheduled reports.
+
+## Components
+
+* Trend analysis agent
+* Compliance gap report generator
+* Scheduled email/Slack digest
+* Dashboard (charts, heatmaps)
+
+### Unit Tests
+
+* Trend signal accuracy
+* Report generation completeness
+* Scheduler trigger correctness
+
+---
+
 # Recommended Tech Stack
 
 ## Phase 1
@@ -570,9 +632,9 @@ Report Agent
 
 ## Phase 3
 
-* BGE-M3
+* OpenAI text-embedding-3-small
 * Qdrant
-* BGE Reranker
+* Cohere Rerank v3.5
 
 ## Phase 4
 
@@ -591,6 +653,28 @@ Report Agent
 * DeepEval
 * LangSmith
 * OpenAI Traces
+
+## Phase 7
+
+* RBAC / Audit / Alerts / Drive Sync / Versioning
+
+## Phase 8
+
+* Oracle Cloud VM (2 OCPUs / 12GB)
+* Docker Compose
+* Lovable / Next.js / React
+* Nginx + SSL
+
+## Phase 9
+
+* Source scrapers (MHADA, CIDCO)
+* Incremental indexing
+
+## Phase 10
+
+* Trend analysis
+* Compliance gap detection
+* Scheduled reports / dashboard
 
 ## UI
 
