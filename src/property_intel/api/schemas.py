@@ -34,3 +34,15 @@ class CopilotResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str = "ok"
+
+
+class SearchResultOut(BaseModel):
+    document_id: int
+    title: str
+    snippet: str | None = None
+    score: float | None = None
+    category: str
+
+
+class SearchResponse(BaseModel):
+    results: list[SearchResultOut]

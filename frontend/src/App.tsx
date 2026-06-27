@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { toast } from "sonner";
 import {
+  Bot,
   Building2,
   GitCompareArrows,
   History,
@@ -76,14 +77,14 @@ export default function PropIntelApp() {
       <Toaster theme="dark" position="top-right" />
       {/* Sidebar */}
       <aside className="w-[260px] shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
-        <div className="px-5 py-5 flex items-center gap-2.5 border-b border-sidebar-border">
-          <div className="w-9 h-9 rounded-lg bg-primary/15 border border-primary/30 flex items-center justify-center">
+        <div className="px-5 py-5 flex items-center gap-3 border-b border-sidebar-border">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/40 to-primary/10 border border-primary/40 flex items-center justify-center shadow-lg shadow-primary/10">
             <Building2 className="w-5 h-5 text-primary" />
           </div>
           <div>
-            <div className="font-semibold tracking-tight text-sidebar-foreground">PropIntel</div>
-            <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
-              Copilot
+            <div className="font-bold tracking-tight text-sidebar-foreground text-base">PropIntel</div>
+            <div className="text-[10px] text-primary/70 uppercase tracking-widest font-medium">
+              AI Copilot
             </div>
           </div>
         </div>
@@ -286,20 +287,11 @@ function ChatPanel({
             m.map((msg) => (msg.id === asstId ? { ...msg, content: acc } : msg)),
           );
         }
-        try {
-          const full = await api.ask(q);
-          setMessages((m) =>
-            m.map((msg) =>
-              msg.id === asstId
-                ? { ...msg, content: full.answer || acc, citations: full.citations, streaming: false }
-                : msg,
-            ),
-          );
-        } catch {
-          setMessages((m) =>
-            m.map((msg) => (msg.id === asstId ? { ...msg, streaming: false } : msg)),
-          );
-        }
+        setMessages((m) =>
+          m.map((msg) =>
+            msg.id === asstId ? { ...msg, streaming: false } : msg,
+          ),
+        );
       } else {
         const resp: AskResponse = await api.ask(q);
         setMessages((m) =>
@@ -386,12 +378,13 @@ function EmptyChatHint({ onPick }: { onPick: (q: string) => void }) {
   ];
   return (
     <div className="max-w-2xl mx-auto mt-10 text-center">
-      <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 mb-4">
-        <Sparkles className="w-7 h-7 text-primary" />
+      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-primary/5 border border-primary/30 mb-5 shadow-xl shadow-primary/10">
+        <Sparkles className="w-8 h-8 text-primary" />
       </div>
-      <h2 className="text-xl font-semibold tracking-tight">PropIntel Copilot</h2>
-      <p className="text-sm text-muted-foreground mt-1.5 mb-6">
-        Cited answers from MahaRERA regulations, the Real Estate Act, and related circulars.
+      <h2 className="text-2xl font-bold tracking-tight">PropIntel Copilot</h2>
+      <p className="text-sm text-muted-foreground mt-2 mb-7 max-w-md mx-auto leading-relaxed">
+        Ask anything about MahaRERA regulations, the Real Estate Act, or related circulars.
+        Get AI-generated answers with cited source documents.
       </p>
       <div className="grid gap-2">
         {samples.map((s) => (
@@ -412,25 +405,23 @@ function MessageBubble({ msg }: { msg: ChatMessage }) {
   if (msg.role === "user") {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-md bg-primary text-primary-foreground px-4 py-2.5 text-sm shadow-sm">
+        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 py-3 text-sm shadow-md shadow-primary/20">
           {msg.content}
         </div>
       </div>
     );
   }
   return (
-    <div className="flex justify-start">
+    <div className="flex justify-start gap-3">
+      <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 mt-0.5">
+        <Bot className="w-3.5 h-3.5 text-primary" />
+      </div>
       <div className="max-w-[85%] w-full">
-        <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
-          <div className="w-6 h-6 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
-            <Building2 className="w-3 h-3 text-primary" />
-          </div>
-          PropIntel
-        </div>
+        <div className="text-[11px] text-primary/60 font-medium mb-1.5 uppercase tracking-wider">PropIntel</div>
         <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-headings:mt-3 prose-headings:mb-2 prose-li:my-0.5 prose-strong:text-foreground text-foreground/90 leading-relaxed">
           <ReactMarkdown>{msg.content}</ReactMarkdown>
           {msg.streaming && (
-            <span className="inline-block w-2 h-4 bg-primary align-middle ml-0.5 animate-pulse" />
+            <span className="inline-block w-1.5 h-4 bg-primary/80 align-middle ml-0.5 animate-pulse rounded-sm" />
           )}
         </div>
         {msg.citations && msg.citations.length > 0 && (

@@ -7,6 +7,7 @@ that chunks and embeds all completed documents so they are ready to query.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from sqlalchemy.orm import Session
 
 from property_intel.config import get_settings
@@ -20,6 +21,21 @@ from property_intel.retrieval.semantic_search import SemanticSearch
 from property_intel.retrieval.vector_store import QdrantStore
 
 RetrievalMode = str  # "semantic" | "hybrid"
+
+
+@lru_cache(maxsize=1)
+def _cached_embedder() -> EmbeddingService:
+    settings = get_settings()
+    return EmbeddingService(
+        model_name=settings.embedding_model,
+        batch_size=settings.embedding_batch_size,
+    )
+
+
+@lru_cache(maxsize=1)
+def _cached_reranker() -> Reranker:
+    settings = get_settings()
+    return Reranker(model_name=settings.reranker_model)
 
 
 class RetrievalService:
@@ -51,15 +67,12 @@ class RetrievalService:
         return cls(
             session=session,
             chunker=MarkdownChunker(),
-            embedder=EmbeddingService(
-                model_name=settings.embedding_model,
-                batch_size=settings.embedding_batch_size,
-            ),
+            embedder=_cached_embedder(),
             vector_store=QdrantStore(
                 host=settings.qdrant_host,
                 port=settings.qdrant_port,
             ),
-            reranker=Reranker(model_name=settings.reranker_model),
+            reranker=_cached_reranker(),
         )
 
     # ── indexing ───────────────────────────────────────────────────────────

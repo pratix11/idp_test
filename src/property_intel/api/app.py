@@ -5,6 +5,7 @@ Endpoints:
   POST /api/v1/ask              — question answering (non-streaming)
   POST /api/v1/summarize        — document summarisation (non-streaming)
   POST /api/v1/compare          — document comparison (non-streaming)
+  GET  /api/v1/search           — BM25 / full-text document search
   POST /api/v1/ask/stream       — question answering (SSE streaming)
   POST /api/v1/summarize/stream — summarisation (SSE streaming)
   POST /api/v1/compare/stream   — comparison (SSE streaming)
@@ -16,10 +17,13 @@ Run with:
 from __future__ import annotations
 
 import json
+import traceback
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 
-from fastapi import Depends, FastAPI
-from fastapi.responses import StreamingResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from property_intel.api.schemas import (
@@ -28,10 +32,18 @@ from property_intel.api.schemas import (
     CompareRequest,
     CopilotResponse,
     HealthResponse,
+    SearchResponse,
+    SearchResultOut,
     SummarizeRequest,
 )
+from property_intel.config import get_settings
 from property_intel.copilot.service import CopilotService
 from property_intel.db.session import get_session
+from property_intel.retrieval.embeddings import EmbeddingService
+from property_intel.retrieval.reranker import Reranker
+from property_intel.retrieval.vector_store import QdrantStore
+from property_intel.search.schema import SearchQuery
+from property_intel.search.service import SearchService
 
 app = FastAPI(
     title="Property Intelligence AI Copilot",
@@ -39,10 +51,72 @@ app = FastAPI(
     version="4.0.0",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content={"error": str(exc), "detail": traceback.format_exc()},
+    )
+
+
+# ── singleton heavy services (loaded once at startup, not per request) ─────────
+
+@lru_cache(maxsize=1)
+def _shared_embedder() -> EmbeddingService:
+    settings = get_settings()
+    return EmbeddingService(
+        model_name=settings.embedding_model,
+        batch_size=settings.embedding_batch_size,
+    )
+
+
+@lru_cache(maxsize=1)
+def _shared_reranker() -> Reranker:
+    settings = get_settings()
+    return Reranker(model_name=settings.reranker_model)
+
+
+@lru_cache(maxsize=1)
+def _shared_qdrant() -> QdrantStore:
+    settings = get_settings()
+    return QdrantStore(host=settings.qdrant_host, port=settings.qdrant_port)
+
+
+# ── FastAPI dependencies ───────────────────────────────────────────────────────
 
 def _get_copilot(session: Session = Depends(get_session)) -> CopilotService:
-    return CopilotService.from_settings(session)
+    from property_intel.copilot.context_builder import ContextBuilder
+    from property_intel.copilot.llm_client import LLMClient
+    from property_intel.retrieval.chunking import MarkdownChunker
+    from property_intel.retrieval.service import RetrievalService
 
+    retrieval = RetrievalService(
+        session=session,
+        chunker=MarkdownChunker(),
+        embedder=_shared_embedder(),
+        vector_store=_shared_qdrant(),
+        reranker=_shared_reranker(),
+    )
+    return CopilotService(
+        retrieval=retrieval,
+        llm=LLMClient.from_settings(),
+        context_builder=ContextBuilder(),
+    )
+
+
+def _get_search(session: Session = Depends(get_session)) -> SearchService:
+    return SearchService(session)
+
+
+# ── helpers ────────────────────────────────────────────────────────────────────
 
 def _to_response(result: object) -> CopilotResponse:
     from property_intel.copilot.service import CopilotAnswer
@@ -76,6 +150,34 @@ async def _stream_response(chunks: object) -> AsyncGenerator[str, None]:
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     return HealthResponse()
+
+
+# ── search ─────────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/search", response_model=SearchResponse)
+def search(
+    q: str = "",
+    mode: str = "bm25",
+    limit: int = 10,
+    search_svc: SearchService = Depends(_get_search),
+) -> SearchResponse:
+    if not q.strip():
+        return SearchResponse(results=[])
+    query = SearchQuery(text=q, page_size=limit)
+    mode_arg = mode if mode in ("fulltext", "bm25", "metadata") else "bm25"
+    page = search_svc.search(query, mode=mode_arg)  # type: ignore[arg-type]
+    return SearchResponse(
+        results=[
+            SearchResultOut(
+                document_id=item.document_id,
+                title=item.title,
+                snippet=item.snippet,
+                score=item.score,
+                category=item.category,
+            )
+            for item in page.items
+        ]
+    )
 
 
 # ── non-streaming endpoints ────────────────────────────────────────────────────
