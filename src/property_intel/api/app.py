@@ -261,7 +261,12 @@ async def _stream_response(chunks: object) -> AsyncGenerator[str, None]:
 # ── health ─────────────────────────────────────────────────────────────────────
 
 @app.get("/health", response_model=HealthResponse)
-def health() -> HealthResponse:
+def health(session: Session = Depends(get_session)) -> HealthResponse:
+    try:
+        from sqlalchemy import text
+        session.execute(text("SELECT 1"))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Database unreachable: {exc}") from exc
     return HealthResponse()
 
 
