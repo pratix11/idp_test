@@ -1,4 +1,5 @@
 from collections.abc import Generator
+from functools import lru_cache
 
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -7,6 +8,7 @@ from property_intel.config import get_settings
 from property_intel.db.base import Base
 
 
+@lru_cache(maxsize=8)
 def get_engine(database_url: str | None = None, connect_timeout: int = 5) -> Engine:
     url = database_url or get_settings().database_url
     return create_engine(url, future=True, connect_args={"connect_timeout": connect_timeout})

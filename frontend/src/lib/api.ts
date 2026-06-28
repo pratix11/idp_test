@@ -66,7 +66,7 @@ async function handle<T>(res: Response): Promise<T> {
 export async function checkHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/health`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(10000),
     });
     if (!res.ok) return false;
     const j = await res.json();
@@ -125,11 +125,20 @@ export async function search(
 }
 
 export async function runAgent(task: string, role: Role): Promise<AgentResponse> {
-  const res = await fetch(`${BASE_URL}/api/v1/agent`, {
-    method: "POST",
-    headers: h(role),
-    body: JSON.stringify({ task }),
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/api/v1/agent`, {
+      method: "POST",
+      headers: h(role),
+      body: JSON.stringify({ task }),
+      signal: AbortSignal.timeout(90000),
+    });
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "TimeoutError") {
+      throw new ApiError(504, "Agent timed out (>90s). Try a simpler task.");
+    }
+    throw new ApiError(0, "Backend is offline or unreachable. Check the health indicator.");
+  }
   return handle<AgentResponse>(res);
 }
 
@@ -169,7 +178,12 @@ export function handleApiError(e: unknown, fallback = "Request failed"): string 
     if (e.status === 403)
       return "Your role doesn't have permission for this feature. Switch to analyst or admin.";
     if (e.status === 401) return "Unknown role";
+    if (e.status === 0)
+      return "Backend is offline or still starting up. Wait 30 seconds and try again.";
     return `${e.status}: ${e.message}`;
+  }
+  if (e instanceof TypeError && (e as TypeError).message.toLowerCase().includes("fetch")) {
+    return "Backend is offline or still starting up. Wait 30 seconds and try again.";
   }
   const msg = e instanceof Error ? e.message : fallback;
   toast.error(msg);

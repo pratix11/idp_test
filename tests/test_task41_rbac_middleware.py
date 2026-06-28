@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from property_intel.api.app import _get_copilot, _get_search, app, get_current_user
+from property_intel.db.session import get_session
 from property_intel.copilot.context_builder import Citation
 from property_intel.copilot.service import CopilotAnswer
 from property_intel.enterprise.rbac import BUILTIN_ROLES, User
@@ -34,11 +35,19 @@ def _mock_search() -> MagicMock:
     return mock
 
 
+def _mock_session() -> MagicMock:
+    """Session mock that satisfies the health check's SELECT 1."""
+    mock = MagicMock()
+    mock.execute.return_value = None
+    return mock
+
+
 @pytest.fixture()
 def base_client() -> Iterator[TestClient]:
     """Client with mocked services but NO user override — tests RBAC headers."""
     app.dependency_overrides[_get_copilot] = lambda: _mock_copilot()
     app.dependency_overrides[_get_search] = lambda: _mock_search()
+    app.dependency_overrides[get_session] = lambda: _mock_session()
     with TestClient(app, raise_server_exceptions=False) as c:
         yield c
     app.dependency_overrides.clear()
