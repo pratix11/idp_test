@@ -55,3 +55,9 @@ class AgentRequest(BaseModel):
 class AgentResponse(BaseModel):
     answer: str
     agent: str = Field(..., description="Name of the agent that handled the task.")
+
+
+class MeResponse(BaseModel):
+    user_id: str
+    role: str
+    permissions: list[str]

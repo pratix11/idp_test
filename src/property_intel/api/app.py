@@ -25,7 +25,7 @@ load_dotenv()
 from collections.abc import AsyncGenerator
 from functools import lru_cache
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
@@ -38,9 +38,16 @@ from property_intel.api.schemas import (
     CompareRequest,
     CopilotResponse,
     HealthResponse,
+    MeResponse,
     SearchResponse,
     SearchResultOut,
     SummarizeRequest,
+)
+from property_intel.enterprise.rbac import (
+    BUILTIN_ROLES,
+    AccessControl,
+    PermissionDeniedError,
+    User,
 )
 from property_intel.config import get_settings
 from property_intel.copilot.service import CopilotService
@@ -131,6 +138,40 @@ def _get_agent_router(session: Session = Depends(get_session)) -> object:
     return AgentRouter(agents=agents)
 
 
+# ── RBAC dependencies ─────────────────────────────────────────────────────────
+
+_ac = AccessControl()
+
+
+def get_current_user(x_user_role: str = Header(default="viewer")) -> User:
+    """Read X-User-Role header and return a User with the matching built-in role.
+
+    In production this would decode a JWT; here a plain header is enough for
+    local testing.  Unknown role names return 401.
+    """
+    role = BUILTIN_ROLES.get(x_user_role.lower())
+    if role is None:
+        raise HTTPException(
+            status_code=401,
+            detail=f"Unknown role '{x_user_role}'. Valid: {list(BUILTIN_ROLES)}",
+        )
+    return User(user_id=f"api-{x_user_role}", roles=[role])
+
+
+from collections.abc import Callable as _Callable
+
+
+def require_permission(action: str, resource: str) -> _Callable[..., User]:
+    """FastAPI dependency factory that enforces a single action:resource check."""
+    def _check(user: User = Depends(get_current_user)) -> User:
+        try:
+            _ac.require(user, action, resource)
+        except PermissionDeniedError as exc:
+            raise HTTPException(status_code=403, detail=str(exc)) from exc
+        return user
+    return _check
+
+
 # ── helpers ────────────────────────────────────────────────────────────────────
 
 def _to_response(result: object) -> CopilotResponse:
@@ -167,6 +208,15 @@ def health() -> HealthResponse:
     return HealthResponse()
 
 
+# ── identity ───────────────────────────────────────────────────────────────────
+
+@app.get("/api/v1/me", response_model=MeResponse)
+def me(user: User = Depends(get_current_user)) -> MeResponse:
+    """Return the current user's role and permissions (read from X-User-Role header)."""
+    perms = sorted(str(p) for p in _ac.permissions_for(user))
+    return MeResponse(user_id=user.user_id, role=user.role_names()[0], permissions=perms)
+
+
 # ── search ─────────────────────────────────────────────────────────────────────
 
 @app.get("/api/v1/search", response_model=SearchResponse)
@@ -175,6 +225,7 @@ def search(
     mode: str = "bm25",
     limit: int = 10,
     search_svc: SearchService = Depends(_get_search),
+    _user: User = Depends(require_permission("read", "search")),
 ) -> SearchResponse:
     if not q.strip():
         return SearchResponse(results=[])
@@ -201,6 +252,7 @@ def search(
 def ask(
     body: AskRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> CopilotResponse:
     return _to_response(copilot.ask(body.question))
 
@@ -209,6 +261,7 @@ def ask(
 def summarize(
     body: SummarizeRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> CopilotResponse:
     return _to_response(copilot.summarize(body.query))
 
@@ -217,6 +270,7 @@ def summarize(
 def compare(
     body: CompareRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> CopilotResponse:
     return _to_response(copilot.compare(body.query_a, body.query_b))
 
@@ -227,6 +281,7 @@ def compare(
 def ask_stream(
     body: AskRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> StreamingResponse:
     return StreamingResponse(
         _stream_response(copilot.stream_ask(body.question)),
@@ -238,6 +293,7 @@ def ask_stream(
 def summarize_stream(
     body: SummarizeRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> StreamingResponse:
     return StreamingResponse(
         _stream_response(copilot.stream_summarize(body.query)),
@@ -249,6 +305,7 @@ def summarize_stream(
 def compare_stream(
     body: CompareRequest,
     copilot: CopilotService = Depends(_get_copilot),
+    _user: User = Depends(require_permission("execute", "copilot")),
 ) -> StreamingResponse:
     return StreamingResponse(
         _stream_response(copilot.stream_compare(body.query_a, body.query_b)),
@@ -262,6 +319,7 @@ def compare_stream(
 def run_agent(
     body: AgentRequest,
     router: object = Depends(_get_agent_router),
+    _user: User = Depends(require_permission("execute", "agents")),
 ) -> AgentResponse:
     from property_intel.agents.router import AgentRouter
 

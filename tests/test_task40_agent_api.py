@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from property_intel.api.app import _get_agent_router, app
+from property_intel.api.app import _get_agent_router, app, get_current_user
+from property_intel.enterprise.rbac import BUILTIN_ROLES, User
+
+
+def _admin_user() -> User:
+    return User(user_id="test-admin", roles=[BUILTIN_ROLES["admin"]])
 
 
 def _mock_router(answer: str = "Agent answer.", agent_name: str = "document_analyst") -> MagicMock:
@@ -22,6 +27,7 @@ def _mock_router(answer: str = "Agent answer.", agent_name: str = "document_anal
 def client() -> Iterator[TestClient]:
     mock_router = _mock_router()
     app.dependency_overrides[_get_agent_router] = lambda: mock_router
+    app.dependency_overrides[get_current_user] = _admin_user
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
     app.dependency_overrides.clear()
@@ -33,6 +39,7 @@ def comparison_client() -> Iterator[TestClient]:
         answer="Comparison result.", agent_name="comparison"
     )
     app.dependency_overrides[_get_agent_router] = lambda: mock_router
+    app.dependency_overrides[get_current_user] = _admin_user
     with TestClient(app, raise_server_exceptions=True) as c:
         yield c
     app.dependency_overrides.clear()
@@ -73,6 +80,7 @@ def test_agent_calls_route_with_task(client: TestClient) -> None:
 
     mock_router = _mock_router()
     app.dependency_overrides[_get_agent_router] = lambda: mock_router
+    app.dependency_overrides[get_current_user] = _admin_user
     try:
         with TestClient(app) as c:
             c.post("/api/v1/agent", json={"task": "What are MHADA regulations?"})
