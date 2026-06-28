@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 
+from langsmith import traceable
 from sqlalchemy.orm import Session
 
 from property_intel.copilot.context_builder import Citation, ContextBuilder
@@ -67,6 +68,7 @@ class CopilotService:
 
     # ── ask ────────────────────────────────────────────────────────────────────
 
+    @traceable(run_type="chain", name="copilot.ask")
     def ask(self, question: str) -> CopilotAnswer:
         """Answer a question using retrieved context."""
         if not question.strip():
@@ -90,6 +92,7 @@ class CopilotService:
 
     # ── summarize ──────────────────────────────────────────────────────────────
 
+    @traceable(run_type="chain", name="copilot.summarize")
     def summarize(self, query: str) -> CopilotAnswer:
         """Summarise documents relevant to the query."""
         if not query.strip():
@@ -113,6 +116,7 @@ class CopilotService:
 
     # ── compare ────────────────────────────────────────────────────────────────
 
+    @traceable(run_type="chain", name="copilot.compare")
     def compare(self, query_a: str, query_b: str) -> CopilotAnswer:
         """Compare documents matching query_a against those matching query_b."""
         if not query_a.strip() or not query_b.strip():
