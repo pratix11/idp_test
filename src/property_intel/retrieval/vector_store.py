@@ -36,7 +36,7 @@ class QdrantStore:
     # ── collection lifecycle ───────────────────────────────────────────────
 
     def ensure_collection(self) -> None:
-        """Create the collection if it does not already exist."""
+        """Create the collection and payload index if they do not already exist."""
         if not self._client.collection_exists(self._collection):
             self._client.create_collection(
                 collection_name=self._collection,
@@ -45,6 +45,13 @@ class QdrantStore:
                     distance=qm.Distance.COSINE,
                 ),
             )
+        # Always ensure the index exists — Qdrant Cloud requires it for filtered ops.
+        # create_payload_index is idempotent: safe to call on an existing index.
+        self._client.create_payload_index(
+            collection_name=self._collection,
+            field_name="document_id",
+            field_schema=qm.PayloadSchemaType.INTEGER,
+        )
 
     def drop_collection(self) -> None:
         if self._client.collection_exists(self._collection):
