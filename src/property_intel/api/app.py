@@ -65,7 +65,73 @@ app = FastAPI(
 
 @app.on_event("startup")
 def _startup() -> None:
-    init_db(get_engine())
+    import logging
+    log = logging.getLogger("property_intel.startup")
+    engine = get_engine()
+    init_db(engine)
+    _ensure_data_ready(engine)
+    log.info("Startup complete")
+
+
+def _ensure_data_ready(engine: object) -> None:
+    """Restore documents and chunks if the DB is empty (e.g. after test teardown)."""
+    import hashlib
+    import logging
+    from datetime import date
+    from pathlib import Path
+    from sqlalchemy import Engine, text
+
+    from property_intel.db.models import ChunkModel, DocumentModel
+    from property_intel.db.session import get_session_factory
+
+    log = logging.getLogger("property_intel.startup")
+    assert isinstance(engine, Engine)
+    session = get_session_factory(engine)()
+    try:
+        doc_count = session.query(DocumentModel).count()
+        if doc_count == 0:
+            log.warning("documents table empty — restoring from data/processed/")
+            processed = Path("data/processed")
+            if not processed.exists():
+                log.warning("data/processed not found, skipping restore")
+                return
+            valid_cats = {"acts", "circulars", "regulations", "rules", "orders", "reports"}
+            inserted = 0
+            for md in sorted(processed.rglob("*.md")):
+                parts = md.relative_to(processed).parts
+                cat = parts[0].lower() if parts else "acts"
+                if cat not in valid_cats:
+                    cat = "acts"
+                content = md.read_text(encoding="utf-8", errors="replace")
+                h = hashlib.sha256(content.encode()).hexdigest()
+                if session.query(DocumentModel).filter_by(content_hash=h).first():
+                    continue
+                session.add(DocumentModel(
+                    title=md.stem.replace("_", " ").replace("-", " "),
+                    source="mahaRERA",
+                    category=cat,
+                    document_type=cat,
+                    date=date(2020, 1, 1),
+                    pages=1,
+                    file_path=str(md.with_suffix(".pdf")).replace("processed", "raw"),
+                    markdown_path=str(md),
+                    content=content,
+                    content_hash=h,
+                    state="completed",
+                ))
+                inserted += 1
+            session.commit()
+            log.warning(f"Restored {inserted} documents from markdown")
+
+        chunk_count = session.query(ChunkModel).count()
+        if chunk_count == 0:
+            log.warning("document_chunks empty — re-indexing into Qdrant")
+            from property_intel.retrieval.service import RetrievalService
+            svc = RetrievalService.from_settings(session)
+            counts = svc.index_documents(reindex=True)
+            log.warning(f"Re-indexed {counts['documents']} docs -> {counts['chunks']} chunks")
+    finally:
+        session.close()
 
 app.add_middleware(
     CORSMiddleware,
