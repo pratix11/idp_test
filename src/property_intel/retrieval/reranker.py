@@ -1,34 +1,34 @@
 from __future__ import annotations
 
-from sentence_transformers import CrossEncoder
+import cohere
 
 from property_intel.retrieval.models import ScoredChunk
 
 
 class Reranker:
-    """Re-score retrieved chunks with a cross-encoder for higher precision.
+    """Re-score retrieved chunks using the Cohere Rerank API.
 
-    A bi-encoder (BGE-M3) embeds query and document *separately* — it's fast
-    but loses context about how they relate.  A cross-encoder sees the
-    (query, document) pair together with full attention — far more accurate
-    but too slow to run on the entire corpus.
+    A bi-encoder (text-embedding-3-small) embeds query and document separately —
+    fast but loses cross-attention context.  Cohere's reranker sees the
+    (query, document) pair together — more accurate but only practical on a
+    small candidate set (~30 results).
 
-    The two-stage pattern:
+    Two-stage pattern:
       1. Retrieve ~30 candidates quickly with BM25 / vector search.
-      2. Re-rank those 30 with the cross-encoder — only 30 forward passes.
+      2. Re-rank those 30 via Cohere API — one API call, no local model.
 
-    This gives retrieval quality close to running the cross-encoder everywhere
-    at a fraction of the cost.
+    An injectable client allows unit tests to pass a mock without API calls.
     """
 
-    def __init__(self, model_name: str = "BAAI/bge-reranker-v2-m3") -> None:
-        self._model_name = model_name
-        self._model: CrossEncoder | None = None
-
-    def _load_model(self) -> CrossEncoder:
-        if self._model is None:
-            self._model = CrossEncoder(self._model_name)
-        return self._model
+    def __init__(
+        self,
+        api_key: str = "",
+        model: str = "rerank-v3.5",
+        *,
+        client: cohere.ClientV2 | None = None,
+    ) -> None:
+        self._client = client or cohere.ClientV2(api_key=api_key)
+        self._model = model
 
     def rerank(
         self,
@@ -36,7 +36,7 @@ class Reranker:
         chunks: list[ScoredChunk],
         top_k: int | None = None,
     ) -> list[ScoredChunk]:
-        """Return chunks re-sorted by cross-encoder relevance score.
+        """Return chunks re-sorted by Cohere relevance score.
 
         Args:
             query:  The original user query string.
@@ -46,20 +46,30 @@ class Reranker:
         if not chunks or not query.strip():
             return chunks
 
-        model = self._load_model()
-        pairs = [(query, chunk.content) for chunk in chunks]
-        raw_scores: list[float] = model.predict(pairs).tolist()  # type: ignore[arg-type,union-attr]
-
-        ranked = sorted(zip(chunks, raw_scores), key=lambda pair: pair[1], reverse=True)
-        reranked = [
-            ScoredChunk(
-                chunk_id=chunk.chunk_id,
-                document_id=chunk.document_id,
-                chunk_index=chunk.chunk_index,
-                content=chunk.content,
-                section_title=chunk.section_title,
-                score=float(score),
+        docs = [c.content for c in chunks]
+        if top_k is not None:
+            response = self._client.rerank(
+                model=self._model, query=query, documents=docs, top_n=top_k
             )
-            for chunk, score in ranked
+        else:
+            response = self._client.rerank(
+                model=self._model, query=query, documents=docs
+            )
+        return [
+            ScoredChunk(
+                chunk_id=chunks[r.index].chunk_id,
+                document_id=chunks[r.index].document_id,
+                chunk_index=chunks[r.index].chunk_index,
+                content=chunks[r.index].content,
+                section_title=chunks[r.index].section_title,
+                score=r.relevance_score,
+            )
+            for r in response.results
         ]
-        return reranked[:top_k] if top_k is not None else reranked
+
+    @classmethod
+    def from_settings(cls, settings: object) -> Reranker:
+        from property_intel.config import Settings
+
+        assert isinstance(settings, Settings)
+        return cls(api_key=settings.cohere_api_key, model=settings.cohere_rerank_model)

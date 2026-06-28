@@ -21,12 +21,12 @@ class Settings(BaseSettings):
     data_processed_dir: Path = REPO_ROOT / "data" / "processed"
     log_level: str = "INFO"
     log_dir: Path = REPO_ROOT / "logs"
-    embedding_model: str = "BAAI/bge-m3"
-    embedding_batch_size: int = 32
+    openai_embedding_model: str = "text-embedding-3-small"
+    cohere_api_key: str = ""
+    cohere_rerank_model: str = "rerank-v3.5"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
     qdrant_collection: str = "document_chunks"
-    reranker_model: str = "BAAI/bge-reranker-v2-m3"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
     openai_temperature: float = 0.0

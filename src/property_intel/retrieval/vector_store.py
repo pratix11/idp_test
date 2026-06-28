@@ -6,7 +6,7 @@ from qdrant_client import models as qm
 from property_intel.retrieval.models import ScoredChunk, VectorPoint
 
 COLLECTION_NAME = "document_chunks"
-VECTOR_DIM = 1024
+VECTOR_DIM = 1536
 
 
 class QdrantStore:

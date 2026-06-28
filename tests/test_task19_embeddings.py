@@ -1,32 +1,33 @@
-"""Task 19 — BGE-M3 Embedding Generation.
+"""Task 19 — OpenAI Embedding Generation.
 
-Unit tests mock SentenceTransformer so no model download is needed.
-Slow tests (marked `slow`) use the real BGE-M3 model and are skipped
-in fast iteration (uv run pytest -m 'not slow').
+Unit tests inject a mock openai.OpenAI client so no API calls are made.
+The slow tests (marked `slow`) call the real OpenAI API and require OPENAI_API_KEY.
 """
 
-import math
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import pytest
 
 from property_intel.retrieval.embeddings import EMBEDDING_DIM, EmbeddingService
 from property_intel.retrieval.models import DocumentChunk
 
+
 # ── helpers ───────────────────────────────────────────────────────────────────
 
 
-def _fake_model(dim: int = EMBEDDING_DIM) -> MagicMock:
-    """Mock SentenceTransformer that returns random unit vectors."""
+def _fake_openai_client(dim: int = EMBEDDING_DIM) -> MagicMock:
+    """Mock openai.OpenAI that returns random float vectors from embeddings.create()."""
     mock = MagicMock()
 
-    def _encode(texts: list[str], **kwargs: object) -> np.ndarray:
-        vecs = np.random.randn(len(texts), dim).astype(np.float32)
-        norms = np.linalg.norm(vecs, axis=1, keepdims=True)
-        return vecs / norms
+    def _create(input: list[str], model: str, **kwargs: object) -> MagicMock:
+        response = MagicMock()
+        response.data = [
+            MagicMock(embedding=[float(i % 10) / 10 for i in range(dim)])
+            for _ in input
+        ]
+        return response
 
-    mock.encode.side_effect = _encode
+    mock.embeddings.create.side_effect = _create
     return mock
 
 
@@ -38,16 +39,12 @@ def _dot(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
-# ── unit tests (mocked model, no download) ───────────────────────────────────
+# ── unit tests (mocked client, no API calls) ──────────────────────────────────
 
 
 @pytest.fixture
 def service() -> EmbeddingService:
-    """EmbeddingService with patched SentenceTransformer."""
-    with patch("property_intel.retrieval.embeddings.SentenceTransformer") as mock_cls:
-        mock_cls.return_value = _fake_model()
-        svc = EmbeddingService(model_name="BAAI/bge-m3", batch_size=8)
-        yield svc
+    return EmbeddingService(api_key="test-key", client=_fake_openai_client())
 
 
 def test_embed_empty_list_returns_empty(service: EmbeddingService) -> None:
@@ -87,67 +84,61 @@ def test_embed_chunks_vectors_have_correct_dim(service: EmbeddingService) -> Non
     assert len(pairs[0][1]) == EMBEDDING_DIM
 
 
-def test_model_not_loaded_at_instantiation() -> None:
-    """Importing or constructing should not trigger a model download."""
-    with patch("property_intel.retrieval.embeddings.SentenceTransformer") as mock_cls:
-        EmbeddingService()
-        mock_cls.assert_not_called()
+def test_api_called_with_correct_model() -> None:
+    mock_client = _fake_openai_client()
+    svc = EmbeddingService(api_key="test-key", model="text-embedding-3-small", client=mock_client)
+    svc.embed(["hello"])
+    mock_client.embeddings.create.assert_called_once()
+    call_kwargs = mock_client.embeddings.create.call_args
+    assert call_kwargs.kwargs["model"] == "text-embedding-3-small"
 
 
-def test_model_loaded_on_first_embed_call() -> None:
-    with patch("property_intel.retrieval.embeddings.SentenceTransformer") as mock_cls:
-        mock_cls.return_value = _fake_model()
-        svc = EmbeddingService()
-        svc.embed(["trigger"])
-        mock_cls.assert_called_once_with("BAAI/bge-m3")
+def test_api_called_once_per_batch() -> None:
+    """All texts in one embed() call go to the API in a single request."""
+    mock_client = _fake_openai_client()
+    svc = EmbeddingService(api_key="test-key", client=mock_client)
+    svc.embed(["a", "b", "c"])
+    assert mock_client.embeddings.create.call_count == 1
 
 
-def test_model_loaded_only_once_across_multiple_calls() -> None:
-    with patch("property_intel.retrieval.embeddings.SentenceTransformer") as mock_cls:
-        mock_cls.return_value = _fake_model()
-        svc = EmbeddingService()
-        svc.embed(["first"])
-        svc.embed(["second"])
-        svc.embed(["third"])
-        assert mock_cls.call_count == 1
+def test_custom_model_name_used() -> None:
+    mock_client = _fake_openai_client()
+    svc = EmbeddingService(api_key="test-key", model="text-embedding-3-large", client=mock_client)
+    svc.embed(["x"])
+    call_kwargs = mock_client.embeddings.create.call_args
+    assert call_kwargs.kwargs["model"] == "text-embedding-3-large"
 
 
-def test_custom_model_name_passed_to_sentence_transformer() -> None:
-    with patch("property_intel.retrieval.embeddings.SentenceTransformer") as mock_cls:
-        mock_cls.return_value = _fake_model()
-        svc = EmbeddingService(model_name="custom/model")
-        svc.embed(["x"])
-        mock_cls.assert_called_once_with("custom/model")
+def test_embedding_dim_constant_is_1536() -> None:
+    assert EMBEDDING_DIM == 1536
 
 
-# ── slow tests (real BGE-M3, skipped in fast runs) ───────────────────────────
+# ── slow tests (real OpenAI API, skipped in fast runs) ───────────────────────
 
 
 @pytest.mark.slow
-def test_real_model_produces_correct_dimension() -> None:
+def test_real_api_produces_correct_dimension() -> None:
     svc = EmbeddingService()
     result = svc.embed(["MahaRERA circular on refund policy for homebuyers"])
     assert len(result[0]) == EMBEDDING_DIM
 
 
 @pytest.mark.slow
-def test_real_model_vectors_are_unit_normalised() -> None:
+def test_real_api_returns_float_lists() -> None:
     svc = EmbeddingService()
     result = svc.embed(["test document about property regulations"])
-    norm = math.sqrt(sum(x * x for x in result[0]))
-    assert abs(norm - 1.0) < 1e-5
+    assert isinstance(result[0], list)
+    assert all(isinstance(v, float) for v in result[0])
 
 
 @pytest.mark.slow
 def test_similar_texts_have_higher_similarity_than_dissimilar() -> None:
     """The whole point of semantic embeddings — similar meaning = close vectors."""
     svc = EmbeddingService()
-    # Semantically similar: same concept, different words
     vecs_sim = svc.embed([
         "builder cannot cancel flat booking after allotment",
         "developer not allowed to withdraw from agreement with homebuyer",
     ])
-    # Semantically dissimilar
     vecs_dis = svc.embed([
         "builder cannot cancel flat booking after allotment",
         "annual monsoon rainfall statistics for coastal Maharashtra",
@@ -155,17 +146,3 @@ def test_similar_texts_have_higher_similarity_than_dissimilar() -> None:
     sim_score = _dot(vecs_sim[0], vecs_sim[1])
     dis_score = _dot(vecs_dis[0], vecs_dis[1])
     assert sim_score > dis_score
-
-
-@pytest.mark.slow
-def test_real_model_embed_chunks_integration() -> None:
-    svc = EmbeddingService()
-    chunks = [
-        _make_chunk("Registration of real estate projects under MahaRERA", 0),
-        _make_chunk("Obligations of promoter towards homebuyer", 1),
-    ]
-    pairs = svc.embed_chunks(chunks)
-    assert len(pairs) == 2
-    for chunk, vector in pairs:
-        assert isinstance(chunk, DocumentChunk)
-        assert len(vector) == EMBEDDING_DIM
