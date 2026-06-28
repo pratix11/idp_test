@@ -18,6 +18,10 @@ from __future__ import annotations
 
 import json
 import traceback
+
+# Load .env into os.environ so third-party SDKs (LangSmith, etc.) can read it
+from dotenv import load_dotenv
+load_dotenv()
 from collections.abc import AsyncGenerator
 from functools import lru_cache
 
