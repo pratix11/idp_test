@@ -5,7 +5,15 @@
   },
   "permissions": {
     "allow": [
-      "Bash(git stash drop:*)"
+      "Bash(*)",
+      "PowerShell(*)",
+      "Edit(*)",
+      "Write(*)",
+      "Read(*)",
+      "Glob(*)",
+      "Grep(*)",
+      "WebFetch(*)",
+      "WebSearch(*)"
     ]
   }
 }

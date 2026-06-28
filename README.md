@@ -11,8 +11,9 @@ Property & Regulatory Document Intelligence Platform — ingests, parses, indexe
 **Phase 5: Agentic Layer — complete.**
 **Phase 6: Evaluation — complete.**
 **Phase 7: Enterprise Features — complete.**
+**Phase 8: Cloud Deployment — complete.**
 
-Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, BGE-M3 embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and BGE cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6 adds RAGAS + DeepEval metrics, LangSmith + OpenAI tracing, and an EvaluationPipeline orchestrator. Phase 7 adds RBAC, audit logs, alerting, Drive sync, and document versioning.
+Ingestion, parsing (Docling primary / MarkItDown fallback), metadata schema, document registry, PostgreSQL storage, and the batch processing pipeline are implemented and tested. Search (PostgreSQL full-text, BM25, and metadata filtering/pagination) is implemented and tested. Phase 3 adds chunking, OpenAI text-embedding-3-small embeddings, Qdrant vector storage, semantic search, hybrid BM25+vector search with Reciprocal Rank Fusion, and Cohere cross-encoder reranking. Phase 4 adds RAG (Retrieval-Augmented Generation) on top: an OpenAI-powered Q&A copilot with inline citations, document summarisation, multi-document comparison, SSE streaming, and a FastAPI REST API. Phase 5 adds five LangGraph-based specialist agents (Document Analyst, Comparison, Compliance, Research, Report) with a keyword-based router. Phase 6 adds RAGAS + DeepEval metrics, LangSmith + OpenAI tracing, and an EvaluationPipeline orchestrator. Phase 7 adds RBAC, audit logs, alerting, Drive sync, and document versioning. Phase 8 deploys the full stack to cloud: Supabase (Postgres, 71 docs), Qdrant Cloud (1106 vectors), Render (FastAPI backend), and Lovable (React frontend).
 
 ## Setup
 
@@ -277,6 +278,25 @@ manager.history("doc-1")       # → [v1, v2]
 diff = manager.diff("doc-1", 1, 2)
 # diff.hash_changed, diff.author_changed, diff.time_delta_seconds, diff.changelogs
 ```
+
+## Cloud Deployment (Phase 8)
+
+The full stack is deployed and live at no cost (free tiers):
+
+| Service | URL | Purpose |
+|---|---|---|
+| **Frontend** | https://propintel-copilot.lovable.app | React/Vite app — 5 tabs, role picker, RBAC |
+| **Backend API** | https://propintel-api.onrender.com | FastAPI — RAG, agents, SSE streaming |
+| **Database** | Supabase (ap-southeast-1) | PostgreSQL — 71 documents |
+| **Vector DB** | Qdrant Cloud (eu-west-2) | 1106 vectors (text-embedding-3-small) |
+
+**Before a demo**: Hit `https://propintel-api.onrender.com/health` in a browser and wait ~30 seconds — Render's free tier spins down after 15 min of inactivity.
+
+**Frontend features:**
+- 5 tabs: Chat (RAG Q&A), Summarize, Compare, Search, Agent (Phase 5 LangGraph)
+- Role picker: viewer / analyst / admin with RBAC gating per tab
+- SSE streaming responses in Chat
+- Health indicator (green = backend live, red = cold starting)
 
 ## Legacy keyword search (Phase 2)
 
