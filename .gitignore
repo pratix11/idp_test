@@ -3,6 +3,7 @@ data/raw/**/*.pdf
 data/processed/
 logs/
 .env
+SERVICES.md
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
