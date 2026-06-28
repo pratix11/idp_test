@@ -52,7 +52,6 @@ from property_intel.enterprise.rbac import (
 from property_intel.config import get_settings
 from property_intel.copilot.service import CopilotService
 from property_intel.db.session import get_engine, get_session, init_db
-from property_intel.retrieval.vector_store import QdrantStore
 from property_intel.search.schema import SearchQuery
 from property_intel.search.service import SearchService
 
@@ -147,14 +146,6 @@ async def global_exception_handler(request: Request, exc: Exception) -> JSONResp
         status_code=500,
         content={"error": str(exc), "detail": traceback.format_exc()},
     )
-
-
-# ── singleton services ─────────────────────────────────────────────────────────
-
-@lru_cache(maxsize=1)
-def _shared_qdrant() -> QdrantStore:
-    settings = get_settings()
-    return QdrantStore(host=settings.qdrant_host, port=settings.qdrant_port)
 
 
 # ── FastAPI dependencies ───────────────────────────────────────────────────────

@@ -58,6 +58,8 @@ class RetrievalService:
             vector_store=QdrantStore(
                 host=settings.qdrant_host,
                 port=settings.qdrant_port,
+                url=settings.qdrant_url,
+                api_key=settings.qdrant_api_key,
             ),
             reranker=Reranker(
                 api_key=settings.cohere_api_key,

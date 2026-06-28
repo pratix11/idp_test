@@ -21,9 +21,16 @@ class QdrantStore:
         host: str = "localhost",
         port: int = 6333,
         *,
+        url: str = "",
+        api_key: str = "",
         client: QdrantClient | None = None,
     ) -> None:
-        self._client = client or QdrantClient(host=host, port=port)
+        if client:
+            self._client = client
+        elif url:
+            self._client = QdrantClient(url=url, api_key=api_key or None)
+        else:
+            self._client = QdrantClient(host=host, port=port)
         self._collection = COLLECTION_NAME
 
     # ── collection lifecycle ───────────────────────────────────────────────

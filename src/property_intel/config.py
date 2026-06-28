@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     cohere_rerank_model: str = "rerank-v3.5"
     qdrant_host: str = "localhost"
     qdrant_port: int = 6333
+    qdrant_url: str = ""          # cloud URL e.g. https://xxxx.cloud.qdrant.io
+    qdrant_api_key: str = ""      # Qdrant Cloud API key (empty = no auth)
     qdrant_collection: str = "document_chunks"
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
