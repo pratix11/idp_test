@@ -12,7 +12,7 @@ TEST_DATABASE_URL = os.environ.get(
 @pytest.fixture(scope="session")
 def db_engine():
     import property_intel.db.models  # registers all ORM models in Base.metadata before create_all
-    from property_intel.db.session import drop_db, get_engine, init_db
+    from property_intel.db.session import get_engine, init_db
 
     engine = get_engine(TEST_DATABASE_URL)
     try:
@@ -23,7 +23,8 @@ def db_engine():
 
     init_db(engine)
     yield engine
-    drop_db(engine)
+    # NOTE: intentionally NOT calling drop_db here — tests share the dev database
+    # and drop_db would destroy real application data (documents + chunks).
     engine.dispose()
 
 
