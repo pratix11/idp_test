@@ -46,3 +46,12 @@ class SearchResultOut(BaseModel):
 
 class SearchResponse(BaseModel):
     results: list[SearchResultOut]
+
+
+class AgentRequest(BaseModel):
+    task: str = Field(..., min_length=1, description="The task or question for the agent.")
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    agent: str = Field(..., description="Name of the agent that handled the task.")

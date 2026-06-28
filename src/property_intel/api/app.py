@@ -31,6 +31,8 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.orm import Session
 
 from property_intel.api.schemas import (
+    AgentRequest,
+    AgentResponse,
     AskRequest,
     CitationOut,
     CompareRequest,
@@ -99,6 +101,34 @@ def _get_copilot(session: Session = Depends(get_session)) -> CopilotService:
 
 def _get_search(session: Session = Depends(get_session)) -> SearchService:
     return SearchService(session)
+
+
+def _get_agent_router(session: Session = Depends(get_session)) -> object:
+    from langchain_openai import ChatOpenAI
+
+    from property_intel.agents.comparison import ComparisonAgent
+    from property_intel.agents.compliance import ComplianceAgent
+    from property_intel.agents.document_analyst import DocumentAnalystAgent
+    from property_intel.agents.report import ReportAgent
+    from property_intel.agents.research import ResearchAgent
+    from property_intel.agents.router import AgentRouter
+    from property_intel.retrieval.service import RetrievalService
+
+    settings = get_settings()
+    retrieval = RetrievalService.from_settings(session)
+    llm = ChatOpenAI(
+        model=settings.openai_model,
+        api_key=settings.openai_api_key,  # type: ignore[arg-type]
+        temperature=0.0,
+    )
+    agents = {
+        "document_analyst": DocumentAnalystAgent.from_retrieval(retrieval, llm),
+        "comparison": ComparisonAgent.from_retrieval(retrieval, llm),
+        "compliance": ComplianceAgent.from_retrieval(retrieval, llm),
+        "research": ResearchAgent.from_retrieval(retrieval, llm),
+        "report": ReportAgent.from_retrieval(retrieval, llm),
+    }
+    return AgentRouter(agents=agents)
 
 
 # ── helpers ────────────────────────────────────────────────────────────────────
@@ -224,3 +254,18 @@ def compare_stream(
         _stream_response(copilot.stream_compare(body.query_a, body.query_b)),
         media_type="text/event-stream",
     )
+
+
+# ── agent endpoint (Phase 5) ───────────────────────────────────────────────────
+
+@app.post("/api/v1/agent", response_model=AgentResponse)
+def run_agent(
+    body: AgentRequest,
+    router: object = Depends(_get_agent_router),
+) -> AgentResponse:
+    from property_intel.agents.router import AgentRouter
+
+    r: AgentRouter = router  # type: ignore[assignment]
+    agent_name = r._classify(body.task)
+    answer = r.route(body.task)
+    return AgentResponse(answer=answer, agent=agent_name)
