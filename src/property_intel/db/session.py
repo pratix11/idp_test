@@ -18,6 +18,7 @@ def get_session_factory(engine: Engine | None = None) -> sessionmaker[Session]:
 
 
 def init_db(engine: Engine) -> None:
+    import property_intel.db.models  # noqa: F401 — registers models with Base
     Base.metadata.create_all(engine)
 
 

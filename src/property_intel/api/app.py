@@ -42,7 +42,7 @@ from property_intel.api.schemas import (
 )
 from property_intel.config import get_settings
 from property_intel.copilot.service import CopilotService
-from property_intel.db.session import get_session
+from property_intel.db.session import get_engine, get_session, init_db
 from property_intel.retrieval.vector_store import QdrantStore
 from property_intel.search.schema import SearchQuery
 from property_intel.search.service import SearchService
@@ -52,6 +52,11 @@ app = FastAPI(
     description="RAG-powered Q&A over Indian property and regulatory documents.",
     version="4.0.0",
 )
+
+
+@app.on_event("startup")
+def _startup() -> None:
+    init_db(get_engine())
 
 app.add_middleware(
     CORSMiddleware,
