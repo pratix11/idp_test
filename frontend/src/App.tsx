@@ -1,721 +1,924 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import { toast } from "sonner";
 import {
   Bot,
   Building2,
   GitCompareArrows,
-  History,
   MessageSquare,
-  Search,
+  Search as SearchIcon,
   Send,
   Sparkles,
   Zap,
+  ChevronDown,
+  FileText,
+  Loader2,
+  AlertTriangle,
+  ScrollText,
+  ShieldAlert,
 } from "lucide-react";
+import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
-import { Toaster } from "@/components/ui/sonner";
-import { cn } from "@/lib/utils";
 import {
-  api,
-  MOCK_ANSWER,
-  MOCK_SEARCH,
-  type AskResponse,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ask,
+  summarize as apiSummarize,
+  compare as apiCompare,
+  search as apiSearch,
+  runAgent,
+  checkHealth,
+  handleApiError,
+  ApiError,
   type Citation,
   type SearchResult,
+  type Role,
 } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
-type Tab = "chat" | "search" | "compare";
+type Tab = "chat" | "summarize" | "compare" | "search" | "agent";
+type HealthState = "checking" | "online" | "offline";
 
-interface ChatMessage {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  citations?: Citation[];
-  streaming?: boolean;
-}
+const ROLE_PERMISSIONS: Record<Role, Tab[]> = {
+  admin: ["chat", "summarize", "compare", "search", "agent"],
+  analyst: ["chat", "summarize", "compare", "search", "agent"],
+  viewer: ["search"],
+  auditor: ["search"],
+};
 
+const ROLE_BADGE: Record<Role, string> = {
+  admin: "bg-red-500/20 text-red-300 border-red-500/30",
+  analyst: "bg-primary/20 text-primary border-primary/30",
+  viewer: "bg-muted text-muted-foreground border-border",
+  auditor: "bg-yellow-500/20 text-yellow-300 border-yellow-500/30",
+};
+
+// =====================================================
+// Root
+// =====================================================
 export default function PropIntelApp() {
   const [tab, setTab] = useState<Tab>("chat");
-  const [apiOk, setApiOk] = useState<boolean | null>(null);
-  const [recent, setRecent] = useState<string[]>([]);
-  const [pendingQuestion, setPendingQuestion] = useState<string | null>(null);
+  const [role, setRole] = useState<Role>("analyst");
+  const [health, setHealth] = useState<HealthState>("checking");
 
   useEffect(() => {
     let cancelled = false;
-    const check = async () => {
-      const ok = await api.health();
-      if (!cancelled) setApiOk(ok);
+    const run = async () => {
+      const ok = await checkHealth();
+      if (!cancelled) setHealth(ok ? "online" : "offline");
     };
-    check();
-    const t = setInterval(check, 15000);
+    run();
+    const id = setInterval(run, 15000);
     return () => {
       cancelled = true;
-      clearInterval(t);
+      clearInterval(id);
     };
   }, []);
 
-  const mockMode = apiOk === false;
-
-  const addRecent = (q: string) => {
-    setRecent((r) => [q, ...r.filter((x) => x !== q)].slice(0, 5));
-  };
+  const allowed = ROLE_PERMISSIONS[role].includes(tab);
 
   return (
-    <div className="flex h-screen w-full bg-background text-foreground overflow-hidden">
+    <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <Toaster theme="dark" position="top-right" />
-      {/* Sidebar */}
-      <aside className="w-[260px] shrink-0 bg-sidebar border-r border-sidebar-border flex flex-col">
-        <div className="px-5 py-5 flex items-center gap-3 border-b border-sidebar-border">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-primary/40 to-primary/10 border border-primary/40 flex items-center justify-center shadow-lg shadow-primary/10">
-            <Building2 className="w-5 h-5 text-primary" />
+      <Sidebar tab={tab} setTab={setTab} role={role} setRole={setRole} health={health} />
+      <main className="flex-1 min-w-0 overflow-hidden flex flex-col">
+        {health === "offline" && (
+          <div className="bg-yellow-500/10 border-b border-yellow-500/20 px-6 py-2.5 text-sm text-yellow-300 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            Backend offline — start{" "}
+            <code className="px-1.5 py-0.5 bg-yellow-500/10 rounded text-xs font-mono">
+              uv run uvicorn property_intel.api.app:app --reload
+            </code>{" "}
+            to enable AI features.
           </div>
-          <div>
-            <div className="font-bold tracking-tight text-sidebar-foreground text-base">PropIntel</div>
-            <div className="text-[10px] text-primary/70 uppercase tracking-widest font-medium">
-              AI Copilot
-            </div>
-          </div>
-        </div>
-
-        <nav className="px-3 py-4 space-y-1">
-          <NavItem
-            icon={<MessageSquare className="w-4 h-4" />}
-            label="Chat"
-            active={tab === "chat"}
-            onClick={() => setTab("chat")}
-          />
-          <NavItem
-            icon={<Search className="w-4 h-4" />}
-            label="Search"
-            active={tab === "search"}
-            onClick={() => setTab("search")}
-          />
-          <NavItem
-            icon={<GitCompareArrows className="w-4 h-4" />}
-            label="Compare"
-            active={tab === "compare"}
-            onClick={() => setTab("compare")}
-          />
-        </nav>
-
-        <Separator className="bg-sidebar-border" />
-
-        <div className="px-3 py-4 flex-1 min-h-0 flex flex-col">
-          <div className="px-2 mb-2 flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
-            <History className="w-3.5 h-3.5" /> Recent
-          </div>
-          <ScrollArea className="flex-1">
-            {recent.length === 0 ? (
-              <div className="px-2 text-xs text-muted-foreground/70 italic">
-                Your recent questions will appear here.
-              </div>
-            ) : (
-              <ul className="space-y-1">
-                {recent.map((q, i) => (
-                  <li key={i}>
-                    <button
-                      onClick={() => {
-                        setTab("chat");
-                        setPendingQuestion(q);
-                      }}
-                      className="w-full text-left px-2 py-1.5 rounded-md text-xs text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground line-clamp-2"
-                    >
-                      {q}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </ScrollArea>
-        </div>
-
-        <div className="px-4 py-3 border-t border-sidebar-border flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <span
-              className={cn(
-                "w-2 h-2 rounded-full",
-                apiOk === null && "bg-muted-foreground animate-pulse",
-                apiOk === true && "bg-emerald-400 shadow-[0_0_8px] shadow-emerald-400/60",
-                apiOk === false && "bg-rose-500",
-              )}
-            />
-            <span className="text-muted-foreground">
-              {apiOk === null ? "Checking…" : apiOk ? "API online" : "API offline"}
-            </span>
-          </div>
-          {mockMode && (
-            <Badge variant="outline" className="text-[10px] border-citation/40 text-citation">
-              MOCK
-            </Badge>
-          )}
-        </div>
-      </aside>
-
-      {/* Main */}
-      <main className="flex-1 min-w-0 flex flex-col">
-        {tab === "chat" && (
-          <ChatPanel
-            mockMode={mockMode}
-            addRecent={addRecent}
-            pendingQuestion={pendingQuestion}
-            clearPending={() => setPendingQuestion(null)}
-          />
         )}
-        {tab === "search" && <SearchPanel mockMode={mockMode} />}
-        {tab === "compare" && <ComparePanel mockMode={mockMode} addRecent={addRecent} />}
+        {!allowed ? (
+          <PermissionDenied role={role} tab={tab} />
+        ) : (
+          <>
+            {tab === "chat" && <ChatPanel role={role} />}
+            {tab === "summarize" && <SummarizePanel role={role} />}
+            {tab === "compare" && <ComparePanel role={role} />}
+            {tab === "search" && <SearchPanel role={role} />}
+            {tab === "agent" && <AgentPanel role={role} />}
+          </>
+        )}
       </main>
     </div>
   );
 }
 
-function NavItem({
-  icon,
-  label,
-  active,
-  onClick,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
+function PermissionDenied({ role, tab }: { role: Role; tab: Tab }) {
   return (
-    <button
-      onClick={onClick}
-      className={cn(
-        "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-        active
-          ? "bg-primary/15 text-primary border border-primary/25"
-          : "text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground border border-transparent",
-      )}
-    >
-      {icon}
-      <span className="font-medium">{label}</span>
-    </button>
-  );
-}
-
-/* ---------------- Chat ---------------- */
-
-function ChatPanel({
-  mockMode,
-  addRecent,
-  pendingQuestion,
-  clearPending,
-}: {
-  mockMode: boolean;
-  addRecent: (q: string) => void;
-  pendingQuestion: string | null;
-  clearPending: () => void;
-}) {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [input, setInput] = useState("");
-  const [streaming, setStreaming] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
-
-  useEffect(() => {
-    if (pendingQuestion) {
-      setInput(pendingQuestion);
-      clearPending();
-    }
-  }, [pendingQuestion, clearPending]);
-
-  const send = async () => {
-    const q = input.trim();
-    if (!q || busy) return;
-    setInput("");
-    setBusy(true);
-    addRecent(q);
-
-    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: "user", content: q };
-    const asstId = `a-${Date.now()}`;
-    setMessages((m) => [
-      ...m,
-      userMsg,
-      { id: asstId, role: "assistant", content: "", streaming: true },
-    ]);
-
-    try {
-      if (mockMode) {
-        if (streaming) {
-          const tokens = MOCK_ANSWER.answer.split(/(\s+)/);
-          for (const t of tokens) {
-            await new Promise((r) => setTimeout(r, 18));
-            setMessages((m) =>
-              m.map((msg) =>
-                msg.id === asstId ? { ...msg, content: msg.content + t } : msg,
-              ),
-            );
-          }
-        }
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === asstId
-              ? {
-                  ...msg,
-                  content: MOCK_ANSWER.answer,
-                  citations: MOCK_ANSWER.citations,
-                  streaming: false,
-                }
-              : msg,
-          ),
-        );
-      } else if (streaming) {
-        let acc = "";
-        for await (const chunk of api.askStream(q)) {
-          acc += chunk;
-          setMessages((m) =>
-            m.map((msg) => (msg.id === asstId ? { ...msg, content: acc } : msg)),
-          );
-        }
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === asstId ? { ...msg, streaming: false } : msg,
-          ),
-        );
-      } else {
-        const resp: AskResponse = await api.ask(q);
-        setMessages((m) =>
-          m.map((msg) =>
-            msg.id === asstId
-              ? { ...msg, content: resp.answer, citations: resp.citations, streaming: false }
-              : msg,
-          ),
-        );
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      toast.error("Failed to get answer", { description: message });
-      setMessages((m) =>
-        m.map((msg) =>
-          msg.id === asstId
-            ? { ...msg, content: "_Error fetching answer._", streaming: false }
-            : msg,
-        ),
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="flex flex-col h-full">
-      <PanelHeader
-        icon={<MessageSquare className="w-4 h-4" />}
-        title="Ask the Copilot"
-        subtitle="Ask any question about Indian property regulations, MahaRERA, or the Real Estate Act."
-      />
-
-      <div className="px-6 pt-4 pb-2 border-b border-border bg-card/30">
-        <div className="flex gap-2 items-end">
-          <Textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                send();
-              }
-            }}
-            placeholder="e.g. What are the registration requirements for real estate agents under MahaRERA?"
-            className="min-h-[60px] resize-none bg-background border-border focus-visible:ring-primary/40"
-            disabled={busy}
-          />
-          <Button
-            onClick={send}
-            disabled={busy || !input.trim()}
-            size="lg"
-            className="h-[60px] px-5"
-          >
-            <Send className="w-4 h-4 mr-2" />
-            Ask
-          </Button>
+    <div className="flex-1 flex items-center justify-center p-6">
+      <div className="max-w-md text-center">
+        <div className="mx-auto h-12 w-12 rounded-full bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center mb-4">
+          <ShieldAlert className="h-6 w-6 text-yellow-400" />
         </div>
-        <div className="mt-2.5 flex items-center justify-between text-xs text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Zap className="w-3.5 h-3.5" />
-            <span>Streaming</span>
-            <Switch checked={streaming} onCheckedChange={setStreaming} />
-          </div>
-          <span className="opacity-70">Shift + Enter for newline</span>
-        </div>
-      </div>
-
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 space-y-6">
-        {messages.length === 0 && <EmptyChatHint onPick={(q) => setInput(q)} />}
-        {messages.map((m) => (
-          <MessageBubble key={m.id} msg={m} />
-        ))}
+        <h2 className="text-lg font-semibold">Permission required</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Your current role (<strong className="text-foreground">{role}</strong>) doesn't have
+          permission to use <strong className="text-foreground">{tab}</strong>. Switch to{" "}
+          <strong className="text-foreground">analyst</strong> or{" "}
+          <strong className="text-foreground">admin</strong> in the sidebar.
+        </p>
       </div>
     </div>
   );
 }
 
-function EmptyChatHint({ onPick }: { onPick: (q: string) => void }) {
-  const samples = [
-    "What are the registration requirements for real estate agents under MahaRERA?",
-    "Summarise the penalties for non-registration of a real estate project.",
-    "What rights do allottees have if a project is delayed?",
+// =====================================================
+// Sidebar
+// =====================================================
+function Sidebar({
+  tab,
+  setTab,
+  role,
+  setRole,
+  health,
+}: {
+  tab: Tab;
+  setTab: (t: Tab) => void;
+  role: Role;
+  setRole: (r: Role) => void;
+  health: HealthState;
+}) {
+  const items: {
+    id: Tab;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    badge?: string;
+    accent?: "agent";
+  }[] = [
+    { id: "chat", label: "Chat", icon: MessageSquare },
+    { id: "summarize", label: "Summarize", icon: ScrollText },
+    { id: "compare", label: "Compare", icon: GitCompareArrows },
+    { id: "search", label: "Search", icon: SearchIcon },
+    { id: "agent", label: "Agent", icon: Zap, badge: "Phase 5", accent: "agent" },
   ];
+
   return (
-    <div className="max-w-2xl mx-auto mt-10 text-center">
-      <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/30 to-primary/5 border border-primary/30 mb-5 shadow-xl shadow-primary/10">
-        <Sparkles className="w-8 h-8 text-primary" />
+    <aside className="w-[240px] shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col">
+      {/* Logo */}
+      <div className="px-5 pt-5 pb-5">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-lg bg-primary/20 border border-primary/40 flex items-center justify-center">
+            <Building2 className="h-5 w-5 text-primary" />
+          </div>
+          <div>
+            <div className="text-[15px] font-semibold tracking-tight text-sidebar-foreground">
+              PropIntel
+            </div>
+            <div className="text-[11px] text-muted-foreground">AI Copilot</div>
+          </div>
+        </div>
       </div>
-      <h2 className="text-2xl font-bold tracking-tight">PropIntel Copilot</h2>
-      <p className="text-sm text-muted-foreground mt-2 mb-7 max-w-md mx-auto leading-relaxed">
-        Ask anything about MahaRERA regulations, the Real Estate Act, or related circulars.
-        Get AI-generated answers with cited source documents.
-      </p>
-      <div className="grid gap-2">
-        {samples.map((s) => (
-          <button
-            key={s}
-            onClick={() => onPick(s)}
-            className="text-left px-4 py-3 rounded-lg border border-border bg-card hover:border-primary/40 hover:bg-card/80 transition-colors text-sm"
-          >
-            {s}
-          </button>
-        ))}
+
+      {/* Nav */}
+      <nav className="px-3 space-y-0.5 flex-1">
+        {items.map((it) => {
+          const Icon = it.icon;
+          const active = tab === it.id;
+          const isAgent = it.accent === "agent";
+          return (
+            <button
+              key={it.id}
+              onClick={() => setTab(it.id)}
+              className={cn(
+                "w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                active
+                  ? isAgent
+                    ? "bg-violet-500/15 text-violet-300 border border-violet-500/25"
+                    : "bg-primary/15 text-primary border border-primary/25"
+                  : "text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground border border-transparent",
+              )}
+            >
+              <Icon
+                className={cn(
+                  "h-4 w-4 shrink-0",
+                  active && (isAgent ? "text-violet-400" : "text-primary"),
+                )}
+              />
+              <span className="font-medium flex-1 text-left">{it.label}</span>
+              {it.badge && (
+                <span
+                  className={cn(
+                    "text-[9px] font-semibold px-1.5 py-0.5 rounded tracking-wide",
+                    isAgent
+                      ? "bg-violet-500/20 text-violet-300"
+                      : "bg-muted text-muted-foreground",
+                  )}
+                >
+                  {it.badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Role + status */}
+      <div className="border-t border-sidebar-border p-4 space-y-3">
+        <div>
+          <div className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground mb-1.5">
+            ROLE
+          </div>
+          <Select value={role} onValueChange={(v) => setRole(v as Role)}>
+            <SelectTrigger className="h-9 text-sm bg-sidebar border-sidebar-border">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {(["admin", "analyst", "viewer", "auditor"] as Role[]).map((r) => (
+                <SelectItem key={r} value={r}>
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={cn(
+                        "h-1.5 w-1.5 rounded-full",
+                        r === "admin" && "bg-red-400",
+                        r === "analyst" && "bg-primary",
+                        r === "viewer" && "bg-muted-foreground",
+                        r === "auditor" && "bg-yellow-400",
+                      )}
+                    />
+                    <span className="capitalize">{r}</span>
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <div className="mt-2">
+            <span
+              className={cn(
+                "inline-flex items-center text-[10px] font-semibold uppercase tracking-wide px-2 py-0.5 rounded border",
+                ROLE_BADGE[role],
+              )}
+            >
+              {role}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span
+            className={cn(
+              "h-2 w-2 rounded-full",
+              health === "online" && "bg-emerald-400 shadow-[0_0_6px] shadow-emerald-400/60",
+              health === "offline" && "bg-red-500",
+              health === "checking" && "bg-muted-foreground animate-pulse",
+            )}
+          />
+          <span>
+            {health === "online"
+              ? "Connected"
+              : health === "offline"
+                ? "Offline"
+                : "Checking…"}
+          </span>
+        </div>
       </div>
-    </div>
+    </aside>
   );
 }
 
-function MessageBubble({ msg }: { msg: ChatMessage }) {
-  if (msg.role === "user") {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-gradient-to-br from-primary to-primary/80 text-primary-foreground px-4 py-3 text-sm shadow-md shadow-primary/20">
-          {msg.content}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="flex justify-start gap-3">
-      <div className="w-7 h-7 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center shrink-0 mt-0.5">
-        <Bot className="w-3.5 h-3.5 text-primary" />
-      </div>
-      <div className="max-w-[85%] w-full">
-        <div className="text-[11px] text-primary/60 font-medium mb-1.5 uppercase tracking-wider">PropIntel</div>
-        <div className="prose prose-invert prose-sm max-w-none prose-p:my-2 prose-headings:mt-3 prose-headings:mb-2 prose-li:my-0.5 prose-strong:text-foreground text-foreground/90 leading-relaxed">
-          <ReactMarkdown>{msg.content}</ReactMarkdown>
-          {msg.streaming && (
-            <span className="inline-block w-1.5 h-4 bg-primary/80 align-middle ml-0.5 animate-pulse rounded-sm" />
-          )}
-        </div>
-        {msg.citations && msg.citations.length > 0 && (
-          <CitationsBlock citations={msg.citations} />
-        )}
-      </div>
-    </div>
-  );
-}
-
+// =====================================================
+// Shared: citations + answer card
+// =====================================================
 function CitationsBlock({ citations }: { citations: Citation[] }) {
   const [open, setOpen] = useState(true);
+  if (!citations?.length) return null;
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-4">
       <CollapsibleTrigger asChild>
-        <button className="flex items-center gap-2 text-xs font-medium text-citation hover:text-citation/80 transition-colors">
-          <span className="w-1.5 h-1.5 rounded-full bg-citation" />
-          {citations.length} {citations.length === 1 ? "Citation" : "Citations"}
-          <span className="opacity-70">{open ? "▾" : "▸"}</span>
+        <button className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors">
+          <FileText className="h-3.5 w-3.5" />
+          {citations.length} citation{citations.length !== 1 ? "s" : ""}
+          <ChevronDown
+            className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-180")}
+          />
         </button>
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-3 grid gap-2.5 sm:grid-cols-2">
+      <CollapsibleContent className="mt-2 space-y-2">
         {citations.map((c) => (
-          <CitationCard key={`${c.chunk_id}-${c.index}`} citation={c} />
+          <div
+            key={`${c.index}-${c.chunk_id}`}
+            className="rounded-md border border-border bg-card p-3"
+          >
+            <div className="flex items-start gap-2">
+              <span className="shrink-0 inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 rounded bg-primary/15 text-primary text-xs font-semibold">
+                {c.index}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-medium text-foreground truncate">
+                  {c.document_title || "Untitled"}
+                </div>
+                {c.section_title && (
+                  <div className="text-xs text-muted-foreground mt-0.5">{c.section_title}</div>
+                )}
+                <p className="text-xs text-foreground/80 mt-1.5 line-clamp-3 leading-relaxed">
+                  {c.content_snippet}
+                </p>
+              </div>
+            </div>
+          </div>
         ))}
       </CollapsibleContent>
     </Collapsible>
   );
 }
 
-function CitationCard({ citation }: { citation: Citation }) {
+function AnswerCard({ answer, citations }: { answer: string; citations: Citation[] }) {
   return (
-    <Card className="relative p-3 pr-10 bg-card border-border hover:border-citation/40 transition-colors">
-      <div className="absolute top-2 right-2 w-6 h-6 rounded-md bg-citation/15 border border-citation/40 flex items-center justify-center text-[11px] font-semibold text-citation">
-        {citation.index}
+    <div className="rounded-lg border border-border bg-card p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-6 w-6 rounded-full bg-primary/15 flex items-center justify-center">
+          <Bot className="h-3.5 w-3.5 text-primary" />
+        </div>
+        <span className="text-xs font-semibold text-foreground/60 tracking-wide uppercase">
+          Answer
+        </span>
       </div>
-      <div className="text-xs font-medium text-foreground">
-        {citation.document_title || `Document #${citation.document_id}`}
+      <div className="text-sm text-foreground/90 leading-relaxed [&_strong]:text-foreground [&_h1]:text-base [&_h2]:text-sm [&_h3]:text-sm [&_ul]:list-disc [&_ul]:pl-4 [&_ol]:list-decimal [&_ol]:pl-4 [&_li]:mt-1 [&_p]:mb-2">
+        <ReactMarkdown>{answer}</ReactMarkdown>
       </div>
-      {citation.section_title && (
-        <div className="text-[11px] text-muted-foreground mt-0.5">{citation.section_title}</div>
-      )}
-      <div className="text-xs text-foreground/75 mt-2 leading-snug">
-        {citation.content_snippet.length > 200
-          ? citation.content_snippet.slice(0, 200) + "…"
-          : citation.content_snippet}
-      </div>
-    </Card>
+      <CitationsBlock citations={citations} />
+    </div>
   );
 }
 
-/* ---------------- Search ---------------- */
+function ErrorCard({ message }: { message: string }) {
+  return (
+    <div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4 flex items-start gap-3">
+      <AlertTriangle className="h-4 w-4 text-yellow-400 mt-0.5 shrink-0" />
+      <p className="text-sm text-yellow-200">{message}</p>
+    </div>
+  );
+}
 
-function SearchPanel({ mockMode }: { mockMode: boolean }) {
-  const [q, setQ] = useState("");
-  const [mode, setMode] = useState<"bm25" | "fulltext">("bm25");
-  const [results, setResults] = useState<SearchResult[]>([]);
+function PageHeader({
+  title,
+  subtitle,
+  accent,
+}: {
+  title: string;
+  subtitle?: string;
+  accent?: "agent";
+}) {
+  return (
+    <div className="border-b border-border bg-card/50 px-8 py-5">
+      <h1
+        className={cn(
+          "text-xl font-semibold tracking-tight",
+          accent === "agent" ? "text-violet-300" : "text-foreground",
+        )}
+      >
+        {title}
+      </h1>
+      {subtitle && <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>}
+    </div>
+  );
+}
+
+// =====================================================
+// Chat Panel
+// =====================================================
+const SAMPLE_QUESTIONS = [
+  "What are the project registration requirements under MahaRERA?",
+  "Can a promoter accept advance payments before signing an agreement?",
+  "What disclosures must be filed quarterly under MahaRERA?",
+];
+
+interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations?: Citation[];
+}
+
+function ChatPanel({ role }: { role: Role }) {
+  const [input, setInput] = useState("");
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
-  const [selected, setSelected] = useState<SearchResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const run = async () => {
-    if (!q.trim()) return;
-    setBusy(true);
-    try {
-      if (mockMode) {
-        await new Promise((r) => setTimeout(r, 300));
-        setResults(MOCK_SEARCH);
-      } else {
-        const r = await api.search(q.trim(), mode);
-        setResults(r.results);
+  useEffect(() => {
+    inputRef.current?.focus();
+  }, []);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, busy]);
+
+  const send = useCallback(
+    async (text: string) => {
+      const q = text.trim();
+      if (!q || busy) return;
+      setError(null);
+      setBusy(true);
+      setMessages((p) => [...p, { id: crypto.randomUUID(), role: "user", content: q }]);
+      setInput("");
+      try {
+        const res = await ask(q, role);
+        setMessages((p) => [
+          ...p,
+          {
+            id: crypto.randomUUID(),
+            role: "assistant",
+            content: res.answer,
+            citations: res.citations,
+          },
+        ]);
+      } catch (e) {
+        setError(handleApiError(e));
+      } finally {
+        setBusy(false);
+        inputRef.current?.focus();
       }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      toast.error("Search failed", { description: message });
-    } finally {
-      setBusy(false);
+    },
+    [busy, role],
+  );
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send(input);
     }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader
-        icon={<Search className="w-4 h-4" />}
-        title="Document Search"
-        subtitle="Search the indexed corpus of property regulations, acts, and circulars."
-      />
-      <div className="px-6 pt-4 pb-4 border-b border-border bg-card/30">
-        <div className="flex gap-2">
-          <Input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && run()}
-            placeholder="Search documents…"
-            className="bg-background"
-          />
-          <div className="flex rounded-md border border-border overflow-hidden">
-            {(["bm25", "fulltext"] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className={cn(
-                  "px-3 text-xs font-medium transition-colors",
-                  mode === m
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-background text-muted-foreground hover:bg-muted",
-                )}
-              >
-                {m === "bm25" ? "BM25" : "Full-text"}
-              </button>
-            ))}
+    <div className="flex h-full flex-col">
+      <PageHeader title="Chat" subtitle="Ask a question about Indian property regulations." />
+
+      <div className="border-b border-border bg-card/30 px-8 py-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="flex items-end gap-2">
+            <Textarea
+              ref={inputRef}
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={onKeyDown}
+              placeholder="Ask a question about MahaRERA, RERA Act, circulars…"
+              className="min-h-[52px] resize-none"
+            />
+            <Button
+              onClick={() => send(input)}
+              disabled={busy || !input.trim()}
+              className="h-[52px] px-5"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+              <span className="ml-2 font-medium">Ask</span>
+            </Button>
           </div>
-          <Button onClick={run} disabled={busy || !q.trim()}>
-            <Search className="w-4 h-4 mr-1.5" /> Search
-          </Button>
+          {messages.length === 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SAMPLE_QUESTIONS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => setInput(q)}
+                  className="text-xs px-3 py-1.5 rounded-full border border-border bg-card hover:border-primary/40 hover:bg-primary/5 text-foreground/70 transition-colors"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_380px] divide-x divide-border">
-        <ScrollArea className="h-full">
-          <div className="p-6 space-y-3">
-            {results.length === 0 && (
-              <div className="text-sm text-muted-foreground text-center py-16">
-                {busy ? "Searching…" : "No results yet. Try a query above."}
-              </div>
-            )}
-            {results.map((r) => (
-              <button
-                key={r.document_id}
-                onClick={() => setSelected(r)}
-                className={cn(
-                  "w-full text-left p-4 rounded-lg border bg-card hover:border-primary/40 transition-colors",
-                  selected?.document_id === r.document_id ? "border-primary/60" : "border-border",
-                )}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="font-medium text-sm">{r.title}</div>
-                  <Badge variant="outline" className="text-[10px] border-citation/40 text-citation shrink-0">
-                    {r.category}
-                  </Badge>
-                </div>
-                <div className="mt-2 text-xs text-muted-foreground line-clamp-2">{r.snippet}</div>
-                <div className="mt-3 flex items-center gap-2">
-                  <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
-                    <div
-                      className="h-full bg-primary"
-                      style={{ width: `${Math.min(100, r.score * 100)}%` }}
-                    />
-                  </div>
-                  <span className="text-[10px] text-muted-foreground tabular-nums">
-                    {r.score.toFixed(2)}
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        </ScrollArea>
-
-        <div className="hidden lg:block bg-card/30">
-          {selected ? (
-            <div className="p-6">
-              <Badge variant="outline" className="text-[10px] border-citation/40 text-citation mb-3">
-                {selected.category}
-              </Badge>
-              <h3 className="text-lg font-semibold">{selected.title}</h3>
-              <div className="mt-2 text-xs text-muted-foreground">
-                Document ID: {selected.document_id} · Score {selected.score.toFixed(3)}
-              </div>
-              <Separator className="my-4" />
-              <p className="text-sm text-foreground/85 leading-relaxed">{selected.snippet}</p>
-            </div>
+      <div ref={scrollRef} className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-4">
+          {messages.length === 0 ? (
+            <EmptyState
+              icon={Sparkles}
+              title="Ask your property law copilot"
+              description="Get cited answers grounded in MahaRERA, the RERA Act, and official circulars."
+            />
           ) : (
-            <div className="h-full flex items-center justify-center text-xs text-muted-foreground p-6 text-center">
-              Select a result to preview details.
+            messages.map((m) =>
+              m.role === "user" ? (
+                <div key={m.id} className="flex justify-end">
+                  <div className="max-w-[80%] rounded-2xl rounded-tr-sm px-4 py-2.5 bg-primary text-primary-foreground">
+                    <p className="text-sm whitespace-pre-wrap leading-relaxed">{m.content}</p>
+                  </div>
+                </div>
+              ) : (
+                <AnswerCard key={m.id} answer={m.content} citations={m.citations || []} />
+              ),
+            )
+          )}
+          {busy && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Thinking…
             </div>
           )}
+          {error && <ErrorCard message={error} />}
         </div>
       </div>
     </div>
   );
 }
 
-/* ---------------- Compare ---------------- */
-
-function ComparePanel({
-  mockMode,
-  addRecent,
+function EmptyState({
+  icon: Icon,
+  title,
+  description,
 }: {
-  mockMode: boolean;
-  addRecent: (q: string) => void;
+  icon: React.ComponentType<{ className?: string }>;
+  title: string;
+  description: string;
 }) {
+  return (
+    <div className="flex flex-col items-center text-center py-14">
+      <div className="h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center mb-4">
+        <Icon className="h-5 w-5 text-primary" />
+      </div>
+      <h3 className="text-base font-semibold">{title}</h3>
+      <p className="mt-1.5 text-sm text-muted-foreground max-w-md">{description}</p>
+    </div>
+  );
+}
+
+// =====================================================
+// Summarize
+// =====================================================
+function SummarizePanel({ role }: { role: Role }) {
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{ answer: string; citations: Citation[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!query.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const r = await apiSummarize(query.trim(), role);
+      setResult(r);
+    } catch (e) {
+      setError(handleApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <PageHeader
+        title="Summarize"
+        subtitle="Generate a concise summary of any property regulation topic."
+      />
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="rounded-lg border border-border bg-card p-5">
+            <label className="block text-sm font-medium mb-2">Topic or keywords to summarize</label>
+            <div className="flex gap-2">
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && run()}
+                placeholder="e.g. MahaRERA registration process"
+              />
+              <Button onClick={run} disabled={busy || !query.trim()}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Summarize"}
+              </Button>
+            </div>
+          </div>
+          {error && <ErrorCard message={error} />}
+          {result && <AnswerCard answer={result.answer} citations={result.citations} />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// =====================================================
+// Compare
+// =====================================================
+function ComparePanel({ role }: { role: Role }) {
   const [a, setA] = useState("");
   const [b, setB] = useState("");
   const [busy, setBusy] = useState(false);
-  const [resp, setResp] = useState<AskResponse | null>(null);
+  const [result, setResult] = useState<{ answer: string; citations: Citation[] } | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const run = async () => {
-    if (!a.trim() || !b.trim()) return;
+    if (!a.trim() || !b.trim() || busy) return;
     setBusy(true);
-    addRecent(`Compare: ${a.trim()} vs ${b.trim()}`);
+    setError(null);
+    setResult(null);
     try {
-      if (mockMode) {
-        await new Promise((r) => setTimeout(r, 500));
-        setResp(MOCK_ANSWER);
-      } else {
-        setResp(await api.compare(a.trim(), b.trim()));
-      }
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Unknown error";
-      toast.error("Compare failed", { description: message });
+      const r = await apiCompare(a.trim(), b.trim(), role);
+      setResult(r);
+    } catch (e) {
+      setError(handleApiError(e));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="flex flex-col h-full">
-      <PanelHeader
-        icon={<GitCompareArrows className="w-4 h-4" />}
-        title="Compare Topics"
-        subtitle="Compare two regulatory topics, sections, or provisions side-by-side."
-      />
-      <div className="px-6 pt-4 pb-4 border-b border-border bg-card/30">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Topic A</label>
-            <Input
-              value={a}
-              onChange={(e) => setA(e.target.value)}
-              placeholder="e.g. MahaRERA agent registration"
-              className="bg-background"
-            />
+    <div className="flex h-full flex-col">
+      <PageHeader title="Compare" subtitle="Compare two regulatory topics side-by-side." />
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="rounded-lg border border-border bg-card p-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-2">Topic A</label>
+                <Textarea
+                  value={a}
+                  onChange={(e) => setA(e.target.value)}
+                  placeholder="e.g. MahaRERA project registration fees"
+                  className="min-h-[80px]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2">Topic B</label>
+                <Textarea
+                  value={b}
+                  onChange={(e) => setB(e.target.value)}
+                  placeholder="e.g. RERA national act registration fees"
+                  className="min-h-[80px]"
+                />
+              </div>
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button onClick={run} disabled={busy || !a.trim() || !b.trim()}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Compare"}
+              </Button>
+            </div>
           </div>
-          <div>
-            <label className="text-xs font-medium text-muted-foreground mb-1.5 block">Topic B</label>
-            <Input
-              value={b}
-              onChange={(e) => setB(e.target.value)}
-              placeholder="e.g. RERA project registration"
-              className="bg-background"
-            />
-          </div>
-        </div>
-        <div className="mt-3 flex justify-end">
-          <Button onClick={run} disabled={busy || !a.trim() || !b.trim()}>
-            <GitCompareArrows className="w-4 h-4 mr-1.5" />
-            {busy ? "Comparing…" : "Compare"}
-          </Button>
+          {error && <ErrorCard message={error} />}
+          {result && <AnswerCard answer={result.answer} citations={result.citations} />}
         </div>
       </div>
-      <ScrollArea className="flex-1">
-        <div className="px-6 py-6 max-w-3xl">
-          {!resp && !busy && (
-            <div className="text-sm text-muted-foreground text-center py-16">
-              Enter two topics above to generate an AI comparison.
-            </div>
-          )}
-          {busy && (
-            <div className="text-sm text-muted-foreground text-center py-16 animate-pulse">
-              Generating comparison…
-            </div>
-          )}
-          {resp && (
-            <>
-              <div className="prose prose-invert prose-sm max-w-none prose-strong:text-foreground text-foreground/90 leading-relaxed">
-                <ReactMarkdown>{resp.answer}</ReactMarkdown>
-              </div>
-              {resp.citations.length > 0 && <CitationsBlock citations={resp.citations} />}
-            </>
-          )}
-        </div>
-      </ScrollArea>
     </div>
   );
 }
 
-/* ---------------- Shared ---------------- */
+// =====================================================
+// Search
+// =====================================================
+const CATEGORY_COLOR: Record<string, string> = {
+  acts: "bg-primary/15 text-primary",
+  act: "bg-primary/15 text-primary",
+  circulars: "bg-emerald-500/15 text-emerald-400",
+  circular: "bg-emerald-500/15 text-emerald-400",
+  regulations: "bg-violet-500/15 text-violet-400",
+  regulation: "bg-violet-500/15 text-violet-400",
+  rules: "bg-yellow-500/15 text-yellow-400",
+  rule: "bg-yellow-500/15 text-yellow-400",
+};
 
-function PanelHeader({
-  icon,
-  title,
-  subtitle,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  subtitle: string;
-}) {
+function SearchPanel({ role }: { role: Role }) {
+  const [q, setQ] = useState("");
+  const [mode, setMode] = useState<"bm25" | "fulltext" | "metadata">("bm25");
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async (qq: string = q, mm: typeof mode = mode) => {
+    if (!qq.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await apiSearch(qq.trim(), mm, role);
+      setResults(r);
+    } catch (e) {
+      setError(handleApiError(e));
+      setResults([]);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div className="px-6 py-4 border-b border-border flex items-center gap-3">
-      <div className="w-8 h-8 rounded-md bg-primary/10 border border-primary/25 flex items-center justify-center text-primary">
-        {icon}
+    <div className="flex h-full flex-col">
+      <PageHeader title="Search" subtitle="Full-text and BM25 search across the document corpus." />
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="rounded-lg border border-border bg-card p-4">
+            <div className="flex gap-2">
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && run()}
+                placeholder="Search documents…"
+              />
+              <Button onClick={() => run()} disabled={busy || !q.trim()}>
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <SearchIcon className="h-4 w-4" />
+                )}
+              </Button>
+            </div>
+            <div className="mt-3 flex gap-1 p-1 bg-muted/50 rounded-md w-fit">
+              {(["bm25", "fulltext", "metadata"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => {
+                    setMode(m);
+                    if (q.trim()) run(q, m);
+                  }}
+                  className={cn(
+                    "text-xs font-medium px-3 py-1 rounded transition-colors capitalize",
+                    mode === m
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {m === "bm25" ? "BM25" : m === "fulltext" ? "Full-text" : "Metadata"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && <ErrorCard message={error} />}
+
+          {results.length === 0 && !busy && !error && (
+            <EmptyState
+              icon={SearchIcon}
+              title="Search the document corpus"
+              description="Use BM25 for keyword relevance, full-text for phrase matches, or metadata to filter by title."
+            />
+          )}
+
+          <div className="space-y-2">
+            {results.map((r) => {
+              const cat = r.category?.toLowerCase() || "";
+              const color = CATEGORY_COLOR[cat] || "bg-muted text-muted-foreground";
+              return (
+                <div
+                  key={r.document_id}
+                  className="rounded-lg border border-border bg-card p-4 hover:border-primary/40 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-sm font-semibold text-foreground">{r.title}</h3>
+                    {r.category && (
+                      <span
+                        className={cn(
+                          "text-[10px] font-semibold uppercase px-2 py-0.5 rounded shrink-0",
+                          color,
+                        )}
+                      >
+                        {r.category}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed line-clamp-3">
+                    {r.snippet}
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <div className="h-1 flex-1 rounded-full bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary rounded-full"
+                        style={{ width: `${Math.min(100, Math.max(0, r.score * 100))}%` }}
+                      />
+                    </div>
+                    <span className="text-[10px] font-medium text-muted-foreground tabular-nums">
+                      {r.score.toFixed(2)}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
-      <div>
-        <h1 className="text-sm font-semibold tracking-tight">{title}</h1>
-        <p className="text-xs text-muted-foreground">{subtitle}</p>
+    </div>
+  );
+}
+
+// =====================================================
+// Agent
+// =====================================================
+const AGENT_TYPES = ["Document Analyst", "Comparison", "Research", "Compliance", "Report"];
+
+const AGENT_COLORS: Record<string, string> = {
+  document_analyst: "bg-primary/15 text-primary border-primary/30",
+  comparison: "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  compliance: "bg-yellow-500/15 text-yellow-300 border-yellow-500/30",
+  research: "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  report: "bg-muted text-muted-foreground border-border",
+};
+
+function AgentPanel({ role }: { role: Role }) {
+  const [task, setTask] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<{
+    answer: string;
+    citations: Citation[];
+    agent: string;
+  } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!task.trim() || busy) return;
+    setBusy(true);
+    setError(null);
+    setResult(null);
+    try {
+      const r = await runAgent(task.trim(), role);
+      setResult(r);
+    } catch (e) {
+      setError(handleApiError(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="border-b border-border bg-card/50 px-8 py-5">
+        <div className="flex items-center gap-2">
+          <Zap className="h-5 w-5 text-violet-400" />
+          <h1 className="text-xl font-semibold tracking-tight text-violet-300">AI Agent</h1>
+          <Badge className="bg-violet-500/20 text-violet-300 border-violet-500/30 hover:bg-violet-500/20">
+            Phase 5
+          </Badge>
+        </div>
+        <p className="text-sm text-muted-foreground mt-1">
+          Routes your task to the right specialist: Document Analyst, Comparison, Compliance,
+          Research, or Report agent.
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="max-w-3xl mx-auto space-y-5">
+          <div className="rounded-lg border border-violet-500/20 bg-card p-5">
+            <label className="block text-sm font-medium mb-2">Describe your task</label>
+            <Textarea
+              value={task}
+              onChange={(e) => setTask(e.target.value)}
+              placeholder="e.g. Compare MahaRERA registration fees vs RERA national act, or Check if a builder cancelling a booking violates MahaRERA rules"
+              className="min-h-[110px] focus-visible:ring-violet-500/50"
+            />
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {AGENT_TYPES.map((t) => (
+                <span
+                  key={t}
+                  className="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/10 text-violet-300 border border-violet-500/20"
+                >
+                  {t}
+                </span>
+              ))}
+            </div>
+            <div className="mt-4 flex justify-end">
+              <Button
+                onClick={run}
+                disabled={busy || !task.trim()}
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+              >
+                {busy ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Zap className="h-4 w-4" />
+                )}
+                <span className="ml-2">Run agent</span>
+              </Button>
+            </div>
+          </div>
+
+          {error && <ErrorCard message={error} />}
+
+          {result && (
+            <div className="space-y-3">
+              <div>
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full border",
+                    AGENT_COLORS[result.agent] || "bg-muted text-muted-foreground border-border",
+                  )}
+                >
+                  <Zap className="h-3 w-3" />
+                  Handled by:{" "}
+                  {result.agent
+                    .split("_")
+                    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+                    .join(" ")}{" "}
+                  Agent
+                </span>
+              </div>
+              <AnswerCard answer={result.answer} citations={result.citations || []} />
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
